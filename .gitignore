@@ -1,0 +1,4 @@
+release
+*.o
+*.so
+*.rock
