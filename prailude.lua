@@ -40,6 +40,38 @@ prailude.util = {
     return raw
   end,
   
+  vanitygen = function(str, center)
+    local not_alphabet_match = "[^13456789abcdefghijkmnopqrstuwxyz]"
+    local map = {
+      [" "] = "1",
+        l   = "1",
+        v   = "w",
+      ["2"] = "3",
+      ["0"] = "o"
+    }
+    str = str:lower()
+    if #str > 51 then
+      return nil, "string too big"
+    end
+    print("str", str)
+    str = str:gsub(".", map)
+    print("str", str)
+    local badchar = str:match(not_alphabet_match)
+    if badchar then
+      return nil, "character '" .. badchar .. "' not possible in address"
+    end
+    
+    local fill = 51 - #str
+    if not center then
+      str = "xrb_1" .. str .. ("1"):rep(fill) .. "bbbbbbbb"
+    else
+      str = "xrb_1" .. ("1"):rep(math.floor(fill/2)) .. str .. ("1"):rep(math.ceil(fill/2)).."bbbbbbbb"
+    end
+    local raw, err = pack_account_with_checksum(str)
+    if not raw then return nil, err end
+    return unpack_account_with_checksum(raw, blake2b_hash(raw, 5))
+  end,
+  
   unpack_balance = function(raw, unit)
     local prev_bc_scale = bc.digits(20)
     if #raw ~= 16 then
