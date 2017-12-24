@@ -22,7 +22,6 @@ static int raiutil_unpack_account_with_checksum(lua_State *L) {
   size_t         acct_len, checksum_len;
   
   luaL_argcheck(L, lua_gettop(L) == 2, 0, "incorrect number of arguments: must have raw_acct, 5_byte_hash");
-  //TODO: size checks on the strings
   acct_str =     luaL_checklstring(L, 1, &acct_len);
   checksum_str = luaL_checklstring(L, 2, &checksum_len);
   if(acct_len != 32)
