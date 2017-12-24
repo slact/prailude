@@ -15,19 +15,30 @@ description = {
 dependencies = {
   "lua >= 5.1, < 5.4",
   "luazen >= 0.8-2",
-  "luabc >= 1.1-1"
+  "luabc >= 1.1-1",
+  "luv >= 1.9.1-1",
+  "lua-cjson",
+  "alt-getopt",
+  "lualogging"
 }
 build = {
   type = "builtin",
   modules = {
-    ["prailude.util"] = {
+    ["prailude.util.lowlevel"] = {
       sources = {
-        "prailude_util.c",
-        "util/uint256.c"
+        "src/util/prailude_util.c",
+        "src/util/uint256.c"
       },
       defines = {("DIST_VERSION=\"%s\""):format(_version)},
       variables={CFLAGS="-ggdb"}
     },
-    prailude = "prailude.lua"
+    ["prailude.util"] = "src/util/prailude_util.lua",
+    ["prailude.server"] = "src/server.lua",
+    prailude = "src/prailude.lua"
+  },
+  install = {
+    bin = {
+      prailude = "bin/prailude.lua"
+    }
   }
 }

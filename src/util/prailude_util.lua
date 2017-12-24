@@ -1,7 +1,5 @@
-local prailude = {}
-
 local bc = require "bc"
-local cutil = require "prailude.util"
+local cutil = require "prailude.util.lowlevel"
 local lz = require "luazen"
 local blake2b_init, blake2b_update, blake2b_final = lz.blake2b_init, lz.blake2b_update, lz.blake2b_final
 local blake2b_hash = function(data, bytes)
@@ -14,19 +12,19 @@ local unpack_account_with_checksum = cutil.unpack_account_with_checksum
 local pack_account_with_checksum = cutil.pack_account_with_checksum
 local unpack_balance_raw = cutil.unpack_balance_raw
 
-prailude.util = {
+local util = {
   blake2b = {
     init = blake2b_init,
     update = blake2b_update,
     final = blake2b_final,
-    hash = blake2b_hash
+    hash = blake2b_hash,
   },
 
   unpack_account = function(raw)
     return unpack_account_with_checksum(raw, blake2b_hash(raw, 5))
   end,
 
-  pack_account = function(account)
+  pack_account = function(account, opt)
     if #account ~= 64 then
       return nil, "invalid account", "wrong length"
     end
@@ -98,4 +96,4 @@ prailude.util = {
   to_hex = cutil.to_hex
 }
 
-return prailude
+return util

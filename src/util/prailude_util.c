@@ -8,7 +8,7 @@
 #include <stdbool.h>
 
 #include "prailude_util.h"
-#include "util/uint256.h"
+#include "uint256.h"
 
 static int raiutil_unpack_account_with_checksum(lua_State *L) {
   static const char b32[] = "13456789abcdefghijkmnopqrstuwxyz";
@@ -167,7 +167,7 @@ static const struct luaL_Reg prailude_util_functions[] = {
   { NULL, NULL }
 };
 
-int luaopen_prailude_util(lua_State* lua) {
+int luaopen_prailude_util_lowlevel(lua_State* lua) {
   lua_newtable(lua);
 #if LUA_VERSION_NUM > 501
   luaL_setfuncs(lua,prailude_util_functions,0);
