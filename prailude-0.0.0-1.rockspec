@@ -29,11 +29,21 @@ build = {
         "src/util/prailude_util.c",
         "src/util/uint256.c"
       },
-      defines = {("DIST_VERSION=\"%s\""):format(_version)},
-      variables={CFLAGS="-ggdb"}
     },
-    ["prailude.util"] = "src/util/prailude_util.lua",
-    ["prailude.server"] = "src/server.lua",
+    ["prailude.util"] =          "src/util/prailude_util.lua",
+    ["prailude.net.server"] =    "src/server.lua",
+    ["prailude.net.bootstrap"] = "src/bootstrap.lua",
+    ["prailude.net"] =           "src/net.lua",
+    ["prailude.config"] =        "src/config.lua",
+    
+    ["prailude.parser.lowlevel"] = {
+      sources = {
+        "src/parser/prailude_parser.c",
+      },
+      incdirs = { "src" }
+    },
+    ["prailude.parser"] =   "src/parser.lua",
+    ["prailude.message"] =  "src/message.lua",
     prailude = "src/prailude.lua"
   },
   install = {
