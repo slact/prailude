@@ -19,7 +19,8 @@ dependencies = {
   "luv >= 1.9.1-1",
   "lua-cjson",
   "alt-getopt",
-  "lualogging"
+  "lualogging",
+  "lua-leveldb"
 }
 build = {
   type = "builtin",
