@@ -3,8 +3,6 @@
 #include <stdio.h>
 #include <assert.h>
 #include <signal.h>
-#include <lua.h>
-#include <lauxlib.h>
 #include <stdbool.h>
 
 #include "prailude_util.h"
