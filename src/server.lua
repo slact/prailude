@@ -1,5 +1,5 @@
 local uv =  require "luv"
-local parser = require "prailude.parser"
+local Message = require "prailude.message"
 --local log = require "prailude.log"
 local server = {}
 function server.new(port)

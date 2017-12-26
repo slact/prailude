@@ -2,7 +2,7 @@ local Prailude =  {
   util =   require "prailude.util",
   net =    require "prailude.net",
   config = require "prailude.config",
-  parser = require "prailude.parser"
+  message = require "prailude.message"
 }
 
 local uv = require "luv"

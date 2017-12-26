@@ -37,13 +37,12 @@ build = {
     ["prailude.net"] =           "src/net.lua",
     ["prailude.config"] =        "src/config.lua",
     
-    ["prailude.parser.lowlevel"] = {
+    ["prailude.message.parser"] = {
       sources = {
-        "src/parser/prailude_parser.c",
+        "src/message/prailude_parser.c",
       },
       incdirs = { "src" }
     },
-    ["prailude.parser"] =   "src/parser.lua",
     ["prailude.message"] =  "src/message.lua",
     prailude = "src/prailude.lua"
   },

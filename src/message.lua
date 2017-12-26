@@ -1,5 +1,4 @@
-local lowlevel = require "raiblocks.message.lowlevel"
-local message_pack = lowlevel.pack
+local parser = require "prailude.message.parser"
 
 local msg_types = {
   invalid =       0,
@@ -38,11 +37,11 @@ local Message_metatable = {
       return packed
     end,
     
-    typecode(self)
+    typecode = function(self)
       return rawget(msg_types, rawget(self, "type"))
     end,
     
-    block_typecode(self)
+    block_typecode = function(self)
       local block = rawget(self, "block")
       if block then
         return block:typecode()
@@ -56,8 +55,8 @@ local Message_metatable = {
 -- the class-like
 local Message = {
   new = function(msgtype, data)
-    assert(rawget(known_message_types[
-    local msg = setmetatable({}, Message_metatable)
+    assert(rawget(known_message_types, msgtype), "tried creating message with unknown msgtype")
+    local msg = setmetatable(data or {}, Message_metatable)
     
     rawset(msg, "type", msgtype)
     if not rawget(msg_types, msgtype) then
@@ -73,8 +72,8 @@ local Message = {
     end
     return msg
   end,
-  unpack = function(self)
-    
+  unpack = function(str)
+    local data = parser.unpack_message
   end,
   get = function(msg_hash)
     --todo
