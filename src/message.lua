@@ -1,4 +1,5 @@
 local parser = require "prailude.message.parser"
+local inspect = require "inspect"
 
 local msg_types = {
   invalid =       0,
@@ -53,34 +54,40 @@ local Message_metatable = {
 }
 
 -- the class-like
-local Message = {
-  new = function(msgtype, data)
-    assert(rawget(known_message_types, msgtype), "tried creating message with unknown msgtype")
-    local msg = setmetatable(data or {}, Message_metatable)
-    
-    rawset(msg, "type", msgtype)
-    if not rawget(msg_types, msgtype) then
-      error("unknown msgtype " .. tostring(msgtype))
-    end
-    
-    --default to mainnet
-    rawset(msg, "net", "main")
-    
-    --shallow-copy the data
-    for k, v in pairs(data) do
-      rawset(msg, k, v)
-    end
-    return msg
-  end,
-  unpack = function(str)
-    local data = parser.unpack_message
-  end,
-  get = function(msg_hash)
-    --todo
-  end,
-  find = function(msg_hash)
+local Message = {}
 
+function Message.new(msgtype, data)
+  if not rawget(msg_types, msgtype) then
+    error("unknown msgtype " .. tostring(msgtype))
   end
-}
+  local msg = setmetatable(data or {}, Message_metatable)
+  
+  rawset(msg, "type", msgtype)
+
+  
+  --default to mainnet
+  rawset(msg, "net", "main")
+  
+  --shallow-copy the data
+  for k, v in pairs(data) do
+    rawset(msg, k, v)
+  end
+  return msg
+end
+
+function Message.unpack(str)
+  local data, leftovers = parser.unpack_message(str)
+  if not data then return nil, leftovers end
+  print ("weelbl")
+  print(inspect(data))
+  print(type(data))
+  if type(data) == "function" then
+    print(debug.getinfo(data))
+  else
+    print(inspect(data))
+  end
+  
+  return Message.new(data.type, data)
+end
 
 return Message
