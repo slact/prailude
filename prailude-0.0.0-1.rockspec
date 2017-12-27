@@ -28,8 +28,9 @@ build = {
     ["prailude.util.lowlevel"] = {
       sources = {
         "src/util/prailude_util.c",
-        "src/util/uint256.c"
+        "src/util/uint256.c",
       },
+      incdirs = { "src" }
     },
     ["prailude.util"] =          "src/util/prailude_util.lua",
     ["prailude.net.server"] =    "src/server.lua",
@@ -40,6 +41,7 @@ build = {
     ["prailude.message.parser"] = {
       sources = {
         "src/message/prailude_parser.c",
+        "src/util/net.c"
       },
       incdirs = { "src" }
     },

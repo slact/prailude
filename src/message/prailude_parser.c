@@ -10,9 +10,9 @@
 
 #include "prailude_parser.h"
 #include "util/prailude_util.h"
+#include "util/net.h"
 
 #include <netinet/in.h>
-#include <arpa/inet.h>
 
 #define RETURN_FAIL(Lua, errmsg) \
   lua_pushnil(Lua); \
@@ -117,10 +117,6 @@ static size_t lua_table_field_fixedsize_string_encode(lua_State *L, int tblindex
   memcpy(dst_buf, str, expected_strlen);
   return expected_strlen;
 }
-  
-static int prailude_parse_udp_message(lua_State *L) {
-  return 0;
-}
 
 static size_t message_header_pack(lua_State *L, int message_table_index, rai_msg_header_t *header, const char **err) {
   const char       *str;
@@ -188,8 +184,6 @@ static size_t message_header_pack(lua_State *L, int message_table_index, rai_msg
 }
 
 static size_t message_header_unpack(lua_State *L, int message_table_index, rai_msg_header_t *hdr, const char **err) {
-  const char       *str;
-  int               isnum;
   
   switch(hdr->net) {
     case RAI_TESTNET:
@@ -306,13 +300,15 @@ static size_t message_header_decode(rai_msg_header_t *hdr, const char *buf, size
 }
 static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, const char *buf, size_t buflen, const char **errstr) {
   // expects target message table to be at top of stack
-  int          i;
-  uint8_t      ipv6_addr[16];
+  int          i, j;
+  
   uint16_t     port;
+  
+  char         ipv6addr_str[INET6_ADDRSTRLEN];
+  
   const char  *buf_start = buf;
   size_t       parsed;
   uint32_t     num;
-  int          tblindex;
   switch(hdr->msg_type) {
     case RAI_MSG_INVALID:
     case RAI_MSG_NO_TYPE:
@@ -324,14 +320,31 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
         raise(SIGSTOP);
         return 0;
       }
-      for(i=0; i<8; i++) {
-        memcpy(ipv6_addr, buf, 16);
+      lua_pushliteral(L, "peers");
+      lua_createtable(L, 8, 0); //table to hold peers
+      for(i=0, j=0; i<8; i++) {
+        
+        if((uint64_t )buf[0] == 0 && (uint64_t )buf[8]==0 && (uint16_t )buf[16] == 0) {
+          //zero-filled
+          continue;
+        }
+        
+        inet_ntop6((const unsigned char *)buf, ipv6addr_str, INET6_ADDRSTRLEN);
         buf+=16;
+        
         port = ntohs(*buf);
         buf+=2;
-        //TODO: all this
+        
+        lua_createtable(L, 2, 0); //for the peer address and port
+        lua_pushstring(L, ipv6addr_str);
+        lua_rawseti(L, -2, 1);
+        
+        lua_pushnumber(L, port);
+        lua_rawseti(L, -2, 2);
+        
+        lua_rawseti(L, -2, ++j); //store in peers table
       }
-      //TODO: do this.
+      lua_rawset(L, -2);
       break;
     case RAI_MSG_PUBLISH:
     case RAI_MSG_CONFIRM_REQ:
@@ -379,10 +392,10 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       if(buflen < 48) { raise(SIGSTOP); return 0;}
       lua_rawsetfield_string(L, -1, "account", buf, 32); //start_account
       buf+=32;
-      num = ntohl((uint32_t )buf);
+      num = ntohl(*(uint32_t *)buf);
       lua_rawsetfield_number(L, -1, "frontier_age", num);
       buf+=8;
-      num = ntohl((uint32_t )buf);
+      num = ntohl(*(uint32_t *)buf);
       lua_rawsetfield_number(L, -1, "frontier_count", num);
       buf+=8;
       break;
@@ -392,8 +405,8 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
 
 static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char *buf, size_t buflen, const char **errstr) {
   int          i;
-  uint8_t      ipv6_addr[16];
-  uint16_t     port;
+  const char  *peer_addr;
+  uint16_t     peer_port;
   char        *buf_start = buf;
   size_t       written;
   uint32_t     num;
@@ -404,12 +417,47 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
       *errstr = "Invalid message type (invalid or no_type)";
       return 0;
     case RAI_MSG_KEEPALIVE:
-      if(buflen < 146) return 0;
-      //TODO: this mheah
+      if(buflen < 144) return 0;
+      
+      lua_rawgetfield(L, -1, "peers");
+      if(!lua_istable(L, -1)) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "expected a 'peers' table in keepalive message");
+        return 2;
+      }
+      
+      for(i=1; i<=8; i++) {
+        lua_rawgeti(L, -1, i);
+        if(lua_istable(L, -1)) {
+          //we have a peer entry {"address", port}
+          lua_rawgeti(L, -1, 1); //address
+          peer_addr = lua_tostring(L, -1);
+          lua_remove(L, -1);
+          
+          lua_rawgeti(L, -1, 2); //port
+          peer_port = lua_tonumber(L, -1);
+          lua_remove(L, -1);
+          
+          inet_pton6(peer_addr, (unsigned char *)buf);
+          
+          //endinanness bug right here, just like in the original implementation
+          memcpy(&buf[16], &peer_port, sizeof(peer_port));
+        }
+        else {
+          //probably nil
+          memset(buf, 0, 18);
+        }
+        buf += 18;
+      }
       break;
     case RAI_MSG_PUBLISH:
     case RAI_MSG_CONFIRM_REQ:
       lua_rawgetfield(L, -1, "block");
+      if(!lua_istable(L, -1)) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "expected a 'block' table in 'publish' or 'confirm_req' message");
+        return 2;
+      }
       buf += block_pack_encode(hdr->block_type, L, buf, buflen);
       if(buf == buf_start) { //not enough space to write block
         return 0;

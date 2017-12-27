@@ -8,7 +8,7 @@
 #include "prailude_util.h"
 #include "uint256.h"
 
-static int raiutil_unpack_account_with_checksum(lua_State *L) {
+int raiutil_unpack_account_with_checksum(lua_State *L) {
   static const char b32[] = "13456789abcdefghijkmnopqrstuwxyz";
   char           out[65];
   int            i;
@@ -52,7 +52,7 @@ static int raiutil_unpack_account_with_checksum(lua_State *L) {
   lua_pushstring(L, errmsg); \
   return 2
 
-static int raiutil_pack_account_with_checksum(lua_State *L) {
+int raiutil_pack_account_with_checksum(lua_State *L) {
   static const char decode32[] =  "\x00\xFF\x01\x02\x03\x04\x05\x06"
                                   "\x07\xFF\xFF\xFF\xFF\xFF\xFF\xFF"
                                   "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"
@@ -162,6 +162,7 @@ static const struct luaL_Reg prailude_util_functions[] = {
   { "unpack_balance_raw", raiutil_unpack_balance_raw },
   { "pack_balance_raw", raiutil_pack_balance_raw },
   { "to_hex", raiutil_to_hex },
+  
   { NULL, NULL }
 };
 
