@@ -4,16 +4,16 @@ local inspect = require "inspect"
 
 --local log = require "prailude.log"
 local server = {}
-function server.new(port)
+function server.start(port)
   
   port = 7075
   
-  local tcp = uv.new_tcp()
-  assert(tcp:bind("::", port))
-  assert(tcp:listen(128 --[[connection backlog size]], function(err)
+  local tcp_server = uv.new_tcp()
+  assert(tcp_server:bind("::", port))
+  assert(tcp_server:listen(128 --[[connection backlog size]], function(err)
     assert(not err, err)
     local client = uv.new_tcp()
-    assert(server:accept(client))
+    assert(tcp:accept(client))
     client:read_start(function(err, chunk, etc)
       print("TCP", err, chunk, etc)
       -- Crash hard on errors
@@ -34,6 +34,8 @@ function server.new(port)
     --do anything on TCP connection start?...
   end))
   
+  servrt.tcp = tcp_server
+  
   local udp = uv.new_udp()
   assert(udp:bind("::", port))
   udp:recv_start(function(err, chunk, addr)
@@ -45,16 +47,9 @@ function server.new(port)
     if not data then
       error(leftovers_or_err)
     end
-    print(inspect(data))
-    print(inspect(leftovers_or_err))
-    
   end)
   
-  return {
-    tcp = tcp,
-    udp = udp
-  }
-  
+  return self
 end
 
 return server

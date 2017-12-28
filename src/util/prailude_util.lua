@@ -93,7 +93,8 @@ local util = {
     return balance
   end,
   
-  to_hex = cutil.to_hex
+  to_hex = cutil.to_hex,
+  print_hex = cutil.print_hex,
 }
 
 return util

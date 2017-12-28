@@ -20,15 +20,17 @@
   return 2
 
 
-#define lua_rawgetfield(Lua, tindex, string_literal) \
-  lua_pushstring(Lua, string_literal);  \
-  lua_rawget(Lua, tindex)
-
-__inline int lua_absindex( lua_State * const L, int const _idx)
-{
-  // positive or pseudo-index: return the index, else convert to absolute stack index
-  return (_idx > 0) ? _idx : (_idx <= LUA_REGISTRYINDEX) ? _idx : (lua_gettop( L) + 1 + _idx);
+static int lua_rawgetfield(lua_State *const L, int tindex, const char *field) {
+  tindex = lua_absindex(L, tindex);
+  lua_pushstring(L, field);
+  lua_rawget(L, tindex);
+  return 1;
 }
+
+//static int lua_absindex( lua_State * const L, int const _idx) {
+//  // positive or pseudo-index: return the index, else convert to absolute stack index
+//  return (_idx > 0) ? _idx : (_idx <= LUA_REGISTRYINDEX) ? _idx : (lua_gettop( L) + 1 + _idx);
+//}
 
   
 static char *lua_dbgval(lua_State *L, int n) {
@@ -70,7 +72,19 @@ void lua_printstack(lua_State *L, const char *what) {
   }
 }
 
-  
+static void lua_inspect_stack(lua_State *L, const char *what) {
+  int n, top = lua_gettop(L);
+  printf("lua stack: %s\n", what);
+  for(n=top; n>0; n--) {
+    printf("\n=========== [%3i] ========== [%3i] =\n", n, n-top-1);
+    luaL_loadstring(L, "return (require \"mm\")");
+    lua_call(L, 0, 1);
+    lua_pushvalue(L, n);
+    lua_call(L, 1, 0);
+  }
+  printf("\n======== [end of stack] ============\n");
+}
+
 static void lua_rawsetfield_string(lua_State *L, int tindex, const char *field, const char *str, size_t strlen) {
   tindex = lua_absindex(L, tindex);
   lua_pushstring(L, field);
@@ -108,7 +122,7 @@ static const char*lua_tblfield_to_fixedsize_string(lua_State *L, int tblindex, c
   if(expected_strlen != len) {
     luaL_error(L, "invalid length of table field value '%s'", fieldname);
   }
-  lua_remove(L, -1);
+  lua_pop(L, 1);
   return str;
 }
 
@@ -121,6 +135,7 @@ static size_t lua_table_field_fixedsize_string_encode(lua_State *L, int tblindex
 static size_t message_header_pack(lua_State *L, int message_table_index, rai_msg_header_t *header, const char **err) {
   const char       *str;
   int               isnum;
+  lua_Number        num;
   
   lua_rawgetfield(L, message_table_index, "net");
   str = lua_tostring(L, -1);
@@ -138,47 +153,50 @@ static size_t message_header_pack(lua_State *L, int message_table_index, rai_msg
       header->net = RAI_MAINNET;
       break;
   }
-  lua_remove(L, -1);
+  lua_pop(L, 1);
   
-  lua_rawgetfield(L, message_table_index, "version_max");
-  header->version_max = lua_tonumberx(L, -1, &isnum);
+  lua_getfield(L, message_table_index, "version_max");
+  num = lua_tonumberx(L, -1, &isnum);
   if(!isnum) {
     *err = "version_max is not a number";
     return 0;
   }
-  lua_remove(L, -1);
+  header->version_max = num;
+  lua_pop(L, 1);
   
-  lua_rawgetfield(L, message_table_index, "version_cur");
-  header->version_max = lua_tonumberx(L, -1, &isnum);
+  lua_getfield(L, message_table_index, "version_cur");
+  num = lua_tonumberx(L, -1, &isnum);
   if(!isnum) {
     *err = "version_cur is not a number";
     return 0;
   }
-  lua_remove(L, -1);
+  header->version_cur = num;
+  lua_pop(L, 1);
   
-  lua_rawgetfield(L, message_table_index, "version_min");
-  header->version_max = lua_tonumberx(L, -1, &isnum);
+  lua_getfield(L, message_table_index, "version_min");
+  num = lua_tonumberx(L, -1, &isnum);
   if(!isnum) {
     *err = "version_min is not a number";
     return 0;
   }
-  lua_remove(L, -1);
+  header->version_min = num;
+  lua_pop(L, 1);
   
-  lua_rawgetfield(L, message_table_index, "typecode");
+  lua_getfield(L, message_table_index, "typecode");
   lua_pushvalue(L, message_table_index); 
   lua_call(L, 1, 1); //msg:typecode()
   header->msg_type = lua_tonumber(L, -1);
-  lua_remove(L, -1);
+  lua_pop(L, 1);
   
-  lua_rawgetfield(L, message_table_index, "extensions");
+  lua_getfield(L, message_table_index, "extensions");
   header->extensions = lua_tonumber(L, -1);
-  lua_remove(L, -1);
+  lua_pop(L, 1);
   
-  lua_rawgetfield(L, message_table_index, "block_typecode");
+  lua_getfield(L, message_table_index, "block_typecode");
   lua_pushvalue(L, message_table_index); 
   lua_call(L, 1, 1); //msg:block_typecode()
   header->block_type = lua_tonumber(L, -1);
-  lua_remove(L, -1);
+  lua_pop(L, 1);
   
   return 8;
 }
@@ -326,25 +344,26 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
         
         if((uint64_t )buf[0] == 0 && (uint64_t )buf[8]==0 && (uint16_t )buf[16] == 0) {
           //zero-filled
-          continue;
+          buf+=18;;
         }
-        
-        inet_ntop6((const unsigned char *)buf, ipv6addr_str, INET6_ADDRSTRLEN);
-        buf+=16;
-        
-        port = ntohs(*buf);
-        buf+=2;
-        
-        lua_createtable(L, 2, 0); //for the peer address and port
-        lua_pushstring(L, ipv6addr_str);
-        lua_rawseti(L, -2, 1);
-        
-        lua_pushnumber(L, port);
-        lua_rawseti(L, -2, 2);
-        
-        lua_rawseti(L, -2, ++j); //store in peers table
+        else {
+          inet_ntop6((const unsigned char *)buf, ipv6addr_str, INET6_ADDRSTRLEN);
+          buf+=16;
+          
+          port = ntohs(*buf);
+          buf+=2;
+          
+          lua_createtable(L, 2, 0); //for the peer address and port
+          lua_pushstring(L, ipv6addr_str);
+          lua_rawseti(L, -2, 1);
+          
+          lua_pushnumber(L, port);
+          lua_rawseti(L, -2, 2);
+          
+          lua_rawseti(L, -2, ++j); //store in peers table
+        }
       }
-      lua_rawset(L, -2);
+      lua_rawset(L, -3);
       break;
     case RAI_MSG_PUBLISH:
     case RAI_MSG_CONFIRM_REQ:
@@ -403,7 +422,7 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
   return buf - buf_start;
 }
 
-static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char *buf, size_t buflen, const char **errstr) {
+static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char *buf, size_t buflen, const char **err) {
   int          i;
   const char  *peer_addr;
   uint16_t     peer_port;
@@ -414,29 +433,30 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
     case RAI_MSG_INVALID:
     case RAI_MSG_NO_TYPE:
       //these are invalid
-      *errstr = "Invalid message type (invalid or no_type)";
+      *err = "Invalid message type (invalid or no_type)";
       return 0;
     case RAI_MSG_KEEPALIVE:
-      if(buflen < 144) return 0;
+      if(buflen < 144){
+        *err = "not enough space to write keepalive message";
+        return 0;
+      }
       
       lua_rawgetfield(L, -1, "peers");
       if(!lua_istable(L, -1)) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "expected a 'peers' table in keepalive message");
-        return 2;
+        *err = "expected a 'peers' table in keepalive message";
+        return 0;
       }
-      
       for(i=1; i<=8; i++) {
-        lua_rawgeti(L, -1, i);
+        lua_geti(L, -1, i);
         if(lua_istable(L, -1)) {
           //we have a peer entry {"address", port}
           lua_rawgeti(L, -1, 1); //address
           peer_addr = lua_tostring(L, -1);
-          lua_remove(L, -1);
+          lua_pop(L, 1);
           
           lua_rawgeti(L, -1, 2); //port
           peer_port = lua_tonumber(L, -1);
-          lua_remove(L, -1);
+          lua_pop(L, 1);
           
           inet_pton6(peer_addr, (unsigned char *)buf);
           
@@ -446,6 +466,7 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
         else {
           //probably nil
           memset(buf, 0, 18);
+          lua_pop(L, 1);
         }
         buf += 18;
       }
@@ -454,56 +475,65 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
     case RAI_MSG_CONFIRM_REQ:
       lua_rawgetfield(L, -1, "block");
       if(!lua_istable(L, -1)) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "expected a 'block' table in 'publish' or 'confirm_req' message");
-        return 2;
+        *err = "expected a 'block' table in 'publish' or 'confirm_req' message";
+        return 0;
       }
       buf += block_pack_encode(hdr->block_type, L, buf, buflen);
       if(buf == buf_start) { //not enough space to write block
+        *err = "not enough space to write confirm_req message";
         return 0;
       }
-      lua_remove(L, -1);
+      lua_pop(L, 1);
       break;
     case  RAI_MSG_CONFIRM_ACK:
-      if(buflen < 96) return 0;
+      if(buflen < 96) {
+        *err = "not enough space to write 'confirm_ack' message";
+        return 0;
+      }
       buf += lua_table_field_fixedsize_string_encode(L, -1, "account",     buf, 32); //vote account
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",   buf, 64); //vote sig
       buf += lua_table_field_fixedsize_string_encode(L, -1, "sequence",    buf, 8); //vote sequence -- still not sure what this is exactly
       
-      written = block_decode_unpack(hdr->block_type, L, buf, buflen - (buf - buf_start), errstr); //pushes block table onto stack
+      written = block_decode_unpack(hdr->block_type, L, buf, buflen - (buf - buf_start), err); //pushes block table onto stack
       if(written == 0) { // need more bytes probably, or maybe there was parsing error
+        //err should have already been set
         return 0;
       }
       buf += written;
       break;
     case RAI_MSG_BULK_PULL:
-      if(buflen < 64) return 0;
+      if(buflen < 64) {
+        *err = "not enough space to write 'bulk_pull' message";
+        return 0;
+      }
       buf += lua_table_field_fixedsize_string_encode(L, -1, "account",     buf, 32); //start_account
       buf += lua_table_field_fixedsize_string_encode(L, -1, "block_hash",  buf, 32); //end block hash
       break;
     case RAI_MSG_BULK_PUSH:
-      lua_createtable(L, 0, 0);
       //nothing to do, this is an empty message (the data follows the message)
       break;
     case RAI_MSG_FRONTIER_REQ:
-      if(buflen < 48) return 0;
+      if(buflen < 48) {
+        *err = "not enough space to write 'frontier_req' message";
+        return 0;
+      }
       buf += lua_table_field_fixedsize_string_encode(L, -1, "account",     buf, 32); //start_account
       
       lua_rawgetfield(L, -1, "frontier_age");
       num = lua_tonumber(L, -1);
-      lua_remove(L, -1);
+      lua_pop(L, 1);
       *(uint16_t *)buf=htonl(num);
       buf+=sizeof(uint16_t);
       
       lua_rawgetfield(L, -1, "frontier_count");
       num = lua_tonumber(L, -1);
-      lua_remove(L, -1);
+      lua_pop(L, 1);
       *(uint16_t *)buf=htonl(num);
       buf+=sizeof(uint16_t);
       
       break;
   }
-  return buflen - (buf - buf_start);
+  return buf - buf_start;
 }
 
 static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *buf, size_t buflen) {
@@ -624,13 +654,14 @@ static int prailude_pack_message(lua_State *L) {
   if(lastsz == 0) {
     lua_pushnil(L);
     lua_pushstring(L, err ? err : "error encoding message header");
+    return 2;
   }
   cur+= lastsz;
-  
   lastsz = message_body_pack_encode(L, &header, cur, 256-8, &err);
   if(lastsz == 0) {
     lua_pushnil(L);
     lua_pushstring(L, err ? err : "error packing and encoding message body");
+    return 2;
   }
   cur+= lastsz;
   

@@ -143,6 +143,23 @@ static void bin_to_strhex(const unsigned char *bin, size_t bin_len, unsigned cha
   out[bin_len * 2] = 0;
 }
 
+static int raiutil_print_hex(lua_State *L) {
+  const char   *in;
+  size_t        sz;
+  int           i;
+  in = luaL_checklstring(L, 1, &sz);
+  for(i=0; i < sz; i++) {
+    printf("%02x ", in[i]);
+    if((i+1) % 16 == 0)
+      printf("\n");
+    else if ((i+1)%8 == 0)
+      printf(" ");
+  }
+  printf("\n");
+  
+  return 0;
+}
+
 static int raiutil_to_hex(lua_State *L) {
   char          out[512];
   const char   *in;
@@ -162,6 +179,7 @@ static const struct luaL_Reg prailude_util_functions[] = {
   { "unpack_balance_raw", raiutil_unpack_balance_raw },
   { "pack_balance_raw", raiutil_pack_balance_raw },
   { "to_hex", raiutil_to_hex },
+  { "print_hex", raiutil_print_hex },
   
   { NULL, NULL }
 };

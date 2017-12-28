@@ -32,8 +32,18 @@ local attributes = {
 --instance metatable
 local Message_metatable = {
   __index = {
+  
+    --default headers
+    net = "main",
+    version_max = 5,
+    version_min = 1,
+    version_cur = 4,
+    extensions = 0,
+    type = "invalid",
+  
     pack = function(self)
-      local packed = message_pack(self)
+      local packed, err = parser.pack_message(self)
+      if not packed then return nil, err end
       rawset(self, "_packed", packed)
       return packed
     end,
@@ -69,8 +79,10 @@ function Message.new(msgtype, data)
   rawset(msg, "net", "main")
   
   --shallow-copy the data
-  for k, v in pairs(data) do
-    rawset(msg, k, v)
+  if data then
+    for k, v in pairs(data) do
+      rawset(msg, k, v)
+    end
   end
   return msg
 end

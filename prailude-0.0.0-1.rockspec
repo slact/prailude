@@ -17,10 +17,12 @@ dependencies = {
   "luazen >= 0.8-2",
   "luabc >= 1.1-1",
   "luv >= 1.9.1-1",
+  "mediator_lua",
   "lua-cjson",
   "alt-getopt",
   "lualogging",
-  "lua-leveldb"
+  "lua-leveldb",
+  "mm"
 }
 build = {
   type = "builtin",
