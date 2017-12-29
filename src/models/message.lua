@@ -74,7 +74,6 @@ function Message.new(msgtype, data)
   
   rawset(msg, "type", msgtype)
 
-  
   --default to mainnet
   rawset(msg, "net", "main")
   
@@ -89,17 +88,11 @@ end
 
 function Message.unpack(str)
   local data, leftovers = parser.unpack_message(str)
-  if not data then return nil, leftovers end
-  print ("weelbl")
-  print(inspect(data))
-  print(type(data))
-  if type(data) == "function" then
-    print(debug.getinfo(data))
+  if not data then
+    return nil, leftovers
   else
-    print(inspect(data))
+    return Message.new(data.type, data)
   end
-  
-  return Message.new(data.type, data)
 end
 
 return Message

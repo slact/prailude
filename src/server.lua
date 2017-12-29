@@ -1,7 +1,8 @@
 local uv =  require "luv"
 local Message = require "prailude.message"
 local bus = require "prailude.bus"
-local peers = require "prailude.peer"
+local Peer = require "prailude.peer"
+local util = require "prailude.util"
 
 local mm = require "mm"
 
@@ -38,7 +39,13 @@ function server.initialize(port)
     if chunk == nil and not err then --EAGAIN or something
       return
     end
-    local peer = Peers.get(addr.ip, addr.port)
+    
+    --print(err, #chunk, addr)
+    
+    local peer = Peer.get(addr.ip, addr.port)
+    
+    print("GOTMSG")
+    mm(peer)
     local msg, leftovers_or_err = Message.unpack(chunk)
     if msg then
       bus.pub("message:receive", msg, peer, "udp")
@@ -54,7 +61,10 @@ function server.initialize(port)
     if protocol =="tcp" then
       error("tcp messaging not yet implemented")
     else --udp by default
-      udp_server:send(msg:pack(), peer.address, peer.port)
+      local msg_packed = assert(msg:pack())
+      assert(peer.address, "peer address missing")
+      assert(peer.port, "peer port missing")
+      mm(uv.udp_send(udp_server, msg_packed, peer.address, peer.port))
     end
   end)
   

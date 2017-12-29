@@ -72,7 +72,7 @@ void lua_printstack(lua_State *L, const char *what) {
   }
 }
 
-static void lua_inspect_stack(lua_State *L, const char *what) {
+void lua_inspect_stack(lua_State *L, const char *what) {
   int n, top = lua_gettop(L);
   printf("lua stack: %s\n", what);
   for(n=top; n>0; n--) {
@@ -443,33 +443,37 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
       
       lua_rawgetfield(L, -1, "peers");
       if(!lua_istable(L, -1)) {
-        *err = "expected a 'peers' table in keepalive message";
-        return 0;
+        //no peers table? no problem. zero-fill our peers
+        memset(buf, 0, 18*8);
+        buf += 18*8;
       }
-      for(i=1; i<=8; i++) {
-        lua_geti(L, -1, i);
-        if(lua_istable(L, -1)) {
-          //we have a peer entry {"address", port}
-          lua_rawgeti(L, -1, 1); //address
-          peer_addr = lua_tostring(L, -1);
-          lua_pop(L, 1);
-          
-          lua_rawgeti(L, -1, 2); //port
-          peer_port = lua_tonumber(L, -1);
-          lua_pop(L, 1);
-          
-          inet_pton6(peer_addr, (unsigned char *)buf);
-          
-          //endinanness bug right here, just like in the original implementation
-          memcpy(&buf[16], &peer_port, sizeof(peer_port));
+      else {
+        for(i=1; i<=8; i++) {
+          lua_geti(L, -1, i);
+          if(lua_istable(L, -1)) {
+            //we have a peer entry {"address", port}
+            lua_rawgeti(L, -1, 1); //address
+            peer_addr = lua_tostring(L, -1);
+            lua_pop(L, 1);
+            
+            lua_rawgeti(L, -1, 2); //port
+            peer_port = lua_tonumber(L, -1);
+            lua_pop(L, 1);
+            
+            inet_pton6(peer_addr, (unsigned char *)buf);
+            
+            //endinanness bug right here, just like in the original implementation
+            memcpy(&buf[16], &peer_port, sizeof(peer_port));
+          }
+          else {
+            //probably nil
+            memset(buf, 0, 18);
+            lua_pop(L, 1);
+          }
+          buf += 18;
         }
-        else {
-          //probably nil
-          memset(buf, 0, 18);
-          lua_pop(L, 1);
-        }
-        buf += 18;
       }
+      lua_pop(L, 1);
       break;
     case RAI_MSG_PUBLISH:
     case RAI_MSG_CONFIRM_REQ:
@@ -681,7 +685,6 @@ static int prailude_unpack_message(lua_State *L) {
   luaL_argcheck(L, lua_gettop(L) == 1, 0, "incorrect number of arguments: must have just the packed message");
   
   
-  lua_printstack(L, "unpackmsg");
   packed_msg = lua_tolstring(L, -1, &msg_sz);
   if(!packed_msg || msg_sz == 0) {
     raise(SIGSTOP);

@@ -85,6 +85,7 @@ end
 
 local Bus = {}
 function Bus.pub(channel, ...)
+  mm {...}
   publish(channel, true, ...)
 end
 function Bus.pub_fail(channel, ...)
@@ -112,6 +113,21 @@ function Bus.yield(channel, timeout)
   end
   channels[channel].coroutines[coro] = true
   return coroutine.yield()
+end
+
+--SHUT. DOWN. EVERYTHING.
+function Bus.annihilate(are_you_sure)
+  if not are_you_sure then return end
+  for chan_name, chan in pairs(channels) do
+    for _, coro in pairs(chan.coroutines) do
+      cancel_timer(coro)
+    end
+    for _, coro in pairs(chan.callbacks) do
+      cancel_timer(coro)
+    end
+    rawset(chan, chan_name, nil)
+  end
+  return true
 end
 
 return Bus
