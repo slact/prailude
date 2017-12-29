@@ -1,17 +1,22 @@
-local Prailude =  {
-  util =   require "prailude.util",
-  net =    require "prailude.net",
-  config = require "prailude.config",
-  message = require "prailude.message"
+local Prailude = {
+  util =        require "prailude.util",
+  -- shared singleton-y stuff
+  config =      require "prailude.config",
+  server =      require "prailude.server",
+  bus =         require "prailude.bus",
+  control =     require "prailude.control",
+  -- instantiatable objects
+  peer =        require "prailude.peer",
+  message =     require "prailude.message",
+  block =       require "prailude.block",
+  transaction = require "prailude.transaction",
+  account =     require "prailude.account"
 }
 
 local uv = require "luv"
 
-function Prailude.run(port)
-  local server = Prailude.net.server.new()
-  --do some other stuff maybe
-  Prailude.running_server = server
-  uv.run()
+function Prailude.run(port, bootstrap_peers)
+  Prailude.control.run(port, bootstrap_peers)
 end
 
 return Prailude

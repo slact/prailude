@@ -1,51 +1,60 @@
 local uv =  require "luv"
 local Message = require "prailude.message"
-local inspect = require "inspect"
+local bus = require "prailude.bus"
+local peers = require "prailude.peer"
+
+local mm = require "mm"
 
 --local log = require "prailude.log"
 local server = {}
-function server.start(port)
+function server.initialize(port)
   
   port = 7075
   
   local tcp_server = uv.new_tcp()
   assert(tcp_server:bind("::", port))
-  assert(tcp_server:listen(128 --[[connection backlog size]], function(err)
+  assert(tcp_server:listen(128 --[[connection backlog size]], function(err, addr)
     assert(not err, err)
     local client = uv.new_tcp()
     assert(tcp:accept(client))
-    client:read_start(function(err, chunk, etc)
-      print("TCP", err, chunk, etc)
+    client:read_start(function(err, chunk, addr)
+      --print("TCP", err, chunk, etc)
       -- Crash hard on errors
-      if true then return end
-      assert(not err, err)
-      
-      if chunk then
-        local ret, err = parser.parse_tcp(client, chunk)
-        if not ret then --parser told us something was wrong. close connection
-          --log
-          client:close()
-        end
+      local data, leftovers_or_err = Message.unpack(chunk)
+      if data then
+        bus.pub("message:receive", data, addr, "tcp")
       else
-        -- When the stream ends, close the socket
-        client:close()
+        bus.pub("message:receive:fail", leftovers_or_err, addr, "tcp")
       end
     end)
     --do anything on TCP connection start?...
   end))
   
-  servrt.tcp = tcp_server
+  server.tcp = tcp_server
   
-  local udp = uv.new_udp()
-  assert(udp:bind("::", port))
-  udp:recv_start(function(err, chunk, addr)
-    print((addr or {}).ip, (addr or {}).port, err, #(chunk or ""))
+  local udp_server = uv.new_udp()
+  assert(udp_server:bind("::", port))
+  udp_server:recv_start(function(err, chunk, addr)
     if chunk == nil and not err then --EAGAIN or something
       return
     end
-    local data, leftovers_or_err = Message.unpack(chunk)
-    if not data then
-      error(leftovers_or_err)
+    local peer = Peers.get(addr.ip, addr.port)
+    local msg, leftovers_or_err = Message.unpack(chunk)
+    if msg then
+      bus.pub("message:receive", msg, peer, "udp")
+    else
+      bus.pub_fail("message:receive", leftovers_or_err, peer, "udp")
+    end
+  end)
+  
+  bus.sub("message:send", function(ok, msg, peer, protocol)
+    mm(msg)
+    mm(peer)
+    mm(protocol)
+    if protocol =="tcp" then
+      error("tcp messaging not yet implemented")
+    else --udp by default
+      udp_server:send(msg:pack(), peer.address, peer.port)
     end
   end)
   

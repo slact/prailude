@@ -35,19 +35,24 @@ build = {
       incdirs = { "src" }
     },
     ["prailude.util"] =          "src/util/prailude_util.lua",
-    ["prailude.net.server"] =    "src/server.lua",
-    ["prailude.net.bootstrap"] = "src/bootstrap.lua",
-    ["prailude.net"] =           "src/net.lua",
+    ["prailude.server"] =        "src/server.lua",
+    ["prailude.control"] =       "src/control.lua",
     ["prailude.config"] =        "src/config.lua",
+    ["prailude.bus"] =           "src/bus.lua",
     
     ["prailude.message.parser"] = {
       sources = {
-        "src/message/prailude_parser.c",
+        "src/models/message/prailude_parser.c",
         "src/util/net.c"
       },
       incdirs = { "src" }
     },
-    ["prailude.message"] =  "src/message.lua",
+    ["prailude.message"] =  "src/models/message.lua",
+    ["prailude.peer"] =     "src/models/peer.lua",
+    ["prailude.block"] =    "src/models/block.lua",
+    ["prailude.transaction"]="src/models/transaction.lua",
+    ["prailude.account"] =   "src/models/account.lua",
+    
     prailude = "src/prailude.lua"
   },
   install = {
