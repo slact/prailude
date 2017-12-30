@@ -27,6 +27,7 @@ dependencies = {
 build = {
   type = "builtin",
   modules = {
+    ["prailude.util"] =          "src/util/prailude_util.lua",
     ["prailude.util.lowlevel"] = {
       sources = {
         "src/util/prailude_util.c",
@@ -34,11 +35,11 @@ build = {
       },
       incdirs = { "src" }
     },
-    ["prailude.util"] =          "src/util/prailude_util.lua",
     ["prailude.server"] =        "src/server.lua",
     ["prailude.control"] =       "src/control.lua",
     ["prailude.config"] =        "src/config.lua",
     ["prailude.bus"] =           "src/bus.lua",
+    ["prailude.log"] =           "src/log.lua",
     
     ["prailude.message.parser"] = {
       sources = {

@@ -42,13 +42,24 @@ end
 local Peer = {
   --find existing peer or make a new one
   get = function(peer_addr, peer_port)
-    peer_addr = ensure_ipv6_if_ipv4(peer_addr)
-    local id = ("%s:%.0f"):format(peer_addr, peer_port)
+    local id    
+    if peer_addr and not peer_port then --maybe we were passed the peer id (addr:port)
+      id = peer_addr
+      peer_addr, peer_port = id:match("^(.*[^:]):(%d+)$")
+    else
+      peer_addr = ensure_ipv6_if_ipv4(peer_addr)
+      id = ("%s:%.0f"):format(peer_addr, peer_port)
+    end
     local peer = rawget(known_peers, id)
     if not peer then
       peer = new_peer(peer_addr, peer_port)
     end
     rawset(known_peers, id, peer)
+    return peer
+  end,
+  
+  forget = function(peer)
+    known_peers[peer] = nil
     return peer
   end
 }
