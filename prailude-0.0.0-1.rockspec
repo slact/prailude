@@ -14,7 +14,6 @@ description = {
 }
 dependencies = {
   "lua >= 5.1, < 5.4",
-  "luazen >= 0.8-2",
   "luabc >= 1.1-1",
   "luv >= 1.9.1-1",
   "lua-cjson",
