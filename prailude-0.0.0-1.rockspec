@@ -33,6 +33,37 @@ build = {
       },
       incdirs = { "src" }
     },
+    ["prailude.util.crypto"] =   {
+      sources = {
+        --blake2b
+        "src/util/crypto/blake2/blake2b.c",
+        
+        --argon2
+        "src/util/crypto/argon2/src/argon2.c",
+        "src/util/crypto/argon2/src/core.c",
+        "src/util/crypto/argon2/src/encoding.c",
+        "src/util/crypto/argon2/src/ref.c",  
+        
+        --monocypher for blake2b and edDSA-blake2b
+        --"src/util/crypto/monocypher.c",
+        
+        --ed25519-donna for a speed comparison
+        "src/util/crypto/ed25519-donna/ed25519.c",
+        
+        "src/util/prailude_crypto.c",
+      },
+      defines = {
+        "ED25519_CUSTOMHASH",
+        "ED25519_CUSTOMRNG"
+      },
+      incdirs = {
+        "src/util/crypto/argon2/include",
+        "src/util/crypto/blake2",
+        "src/util/crypto",
+        "src"
+      }
+    },
+    
     ["prailude.server"] =        "src/server.lua",
     ["prailude.control"] =       "src/control.lua",
     ["prailude.config"] =        "src/config.lua",
