@@ -1,3 +1,4 @@
+
 /*
 	a custom hash must have a 512bit digest and implement:
 
@@ -9,10 +10,9 @@
 	void ed25519_hash(uint8_t *hash, const uint8_t *in, size_t inlen);
 */
 
-
-#include "blake2/blake2.h"
-
-typedef blake2b_state ed25519_hash_context;
+typedef struct {
+    void * blake2;
+} ed25519_hash_context;
 
 void ed25519_hash_init (ed25519_hash_context * ctx);
 
