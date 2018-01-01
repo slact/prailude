@@ -96,6 +96,44 @@ static int lua_blake2b_hash(lua_State *L) {
   return 1;
 }
 
+static int lua_blake2b_init(lua_State *L) {
+  blake2b_state     *ctx;
+  lua_Number         n;
+  
+  luaL_newmetatable(L, "blake2b_ctx");
+  ctx = lua_newuserdata(L, sizeof(*ctx));
+  luaL_setmetatable(L, "blake2b_ctx");
+  
+  if(ctx == NULL) {
+    return luaL_error(L, "can't init blaked2b context: no memory");
+  }
+  if(lua_gettop(L) > 1) {
+    n = luaL_checknumber(L, 1);
+  }
+  else {
+    n = 64;
+  }
+  blake2b_init(ctx, n);
+  return 1;
+}
+static int lua_blake2b_update(lua_State *L) {
+  blake2b_state     *ctx = luaL_checkudata(L, 1, "blake2b_ctx");
+  size_t             datalen;
+  const char        *data = luaL_checklstring(L, 2, &datalen);
+  
+  blake2b_update(ctx, data, datalen);
+  lua_pushvalue(L, 1);
+  return 1;
+}
+static int lua_blake2b_finalize(lua_State *L) {
+  blake2b_state     *ctx = luaL_checkudata(L, 1, "blake2b_ctx");
+  char               out[64];
+  blake2b_final(ctx, out, 64);
+  lua_pushlstring(L, out, ctx->outlen);
+  return 1;
+}
+
+
 
 static int lua_edDSA_blake2b_get_public_key(lua_State *L) {
   const char *privkey;
@@ -206,9 +244,9 @@ static int lua_argon2d_raiblocks_hash(lua_State *L) {
 //}
 
 static const struct luaL_Reg prailude_crypto_functions[] = {
-  //{ "blake2b_init", lua_blake2b_init },
-  //{ "blake2b_update", lua_blake2b_update },
-  //{ "blake2b_finalize", lua_blake2b_finalize },
+  { "blake2b_init", lua_blake2b_init },
+  { "blake2b_update", lua_blake2b_update },
+  { "blake2b_finalize", lua_blake2b_finalize },
   { "blake2b_hash", lua_blake2b_hash }, //(input_str, hash_bytes = 64)
   
   { "edDSA_blake2b_get_public_key", lua_edDSA_blake2b_get_public_key },
