@@ -1,16 +1,18 @@
 local uv =  require "luv"
-local Message = require "prailude.message"
+local Message --require it later
 local bus = require "prailude.bus"
-local Peer = require "prailude.peer"
+local Peer -- require it later
 local util = require "prailude.util"
 
 local mm = require "mm"
 
 --local log = require "prailude.log"
-local server = {}
-function server.initialize(port)
+local Server = {}
+function Server.initialize(port)
+  Message = require "prailude.message"
+  Peer = require "prailude.peer"
   
-  port = 7075
+  port = port or 7075
   
   local tcp_server = uv.new_tcp()
   assert(tcp_server:bind("::", port))
@@ -31,7 +33,7 @@ function server.initialize(port)
     --do anything on TCP connection start?...
   end))
   
-  server.tcp = tcp_server
+  Server.tcp = tcp_server
   
   local udp_server = uv.new_udp()
   assert(udp_server:bind("::", port))
@@ -44,31 +46,31 @@ function server.initialize(port)
     
     local peer = Peer.get(addr.ip, addr.port)
     
-    print("GOTMSG")
     mm(peer)
     local msg, leftovers_or_err = Message.unpack(chunk)
     if msg then
-      bus.pub("message:receive", msg, peer, "udp")
+      bus.pub( "message:receive", msg, peer, "udp")
+      bus.pub(("message:receive:%s"):format(msg.type), msg, peer, "udp")
     else
       bus.pub_fail("message:receive", leftovers_or_err, peer, "udp")
     end
   end)
   
-  bus.sub("message:send", function(ok, msg, peer, protocol)
-    mm(msg)
-    mm(peer)
-    mm(protocol)
-    if protocol =="tcp" then
-      error("tcp messaging not yet implemented")
-    else --udp by default
-      local msg_packed = assert(msg:pack())
-      assert(peer.address, "peer address missing")
-      assert(peer.port, "peer port missing")
-      mm(uv.udp_send(udp_server, msg_packed, peer.address, peer.port))
-    end
-  end)
-  
-  return self
+  Server.udp = udp_server
+  return Server
 end
 
-return server
+function Server.send(msg, peer)
+  if msg.protocol =="tcp" then
+    error("tcp messaging not yet implemented")
+  else --udp by default
+    local msg_packed = assert(msg:pack())
+    assert(peer.address, "peer address missing")
+    assert(peer.port, "peer port missing")
+    uv.udp_send(udp_server, msg_packed, peer.address, peer.port)
+    logger:debug("server: sent message %s to peer %s", msg.type, tostring(peer))
+  end
+  return Server
+end
+
+return Server

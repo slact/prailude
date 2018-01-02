@@ -1,7 +1,7 @@
 #!/usr/bin/lua
 package = "prailude"
 local _version = "0.0.0"
-version = _version .. "-1"
+version = _version .. "-2"
 source = {
   url="git://github.com/slact/prailude"
   --tag="v".._version
@@ -20,6 +20,7 @@ dependencies = {
   "alt-getopt",
   "lualogging",
   "lua-leveldb",
+  "lsqlite3",
   "mm"
 }
 build = {
@@ -43,6 +44,7 @@ build = {
         "src/util/crypto/argon2/src/core.c",
         "src/util/crypto/argon2/src/encoding.c",
         "src/util/crypto/argon2/src/ref.c",  
+        "src/util/crypto/argon2/src/thread.c",  
         
         --monocypher for blake2b and edDSA-blake2b
         --"src/util/crypto/monocypher.c",
@@ -54,7 +56,8 @@ build = {
       },
       defines = {
         "ED25519_CUSTOMHASH",
-        "ED25519_CUSTOMRNG"
+        "ED25519_CUSTOMRNG",
+        "ARGON2_NO_THREADS"
       },
       incdirs = {
         "src/util/crypto/argon2/include",
@@ -68,6 +71,7 @@ build = {
     ["prailude.control"] =       "src/control.lua",
     ["prailude.config"] =        "src/config.lua",
     ["prailude.bus"] =           "src/bus.lua",
+    ["prailude.rainet"] =        "src/rainet.lua",
     ["prailude.log"] =           "src/log.lua",
     
     ["prailude.message.parser"] = {

@@ -1,5 +1,6 @@
 local parser = require "prailude.message.parser"
 local inspect = require "inspect"
+local server = require "prailude.server"
 
 local msg_types = {
   invalid =       0,
@@ -59,6 +60,24 @@ local Message_metatable = {
       else
         return 0 --not a block
       end
+    end,
+
+    send = function(self, peer)
+      local ok, err = Server.send(self, peer)
+      if ok then
+        return send
+      else
+        return nil, err
+      end
+    end,
+    
+    broadcast = function(self, peers)
+      local ok, err
+      for _, peer in pairs(peers) do
+        ret, err = self:send(peer)
+        if not ok then return nil, err end
+      end
+      return self
     end
   }
 }
@@ -66,23 +85,32 @@ local Message_metatable = {
 -- the class-like
 local Message = {}
 
-function Message.new(msgtype, data)
+function Message.new(msgtype, data) -- (data) is also ok, as long as there's a data.type message type value
+  local shallow_copy_data = true
+  
+  local new_msg_data
+  if type(msgtype) == "table" then -- wrap around the passed-in data
+    shallow_copy_data = false
+    data = msgtype
+    msgtype = data.type
+    new_msg_data = data
+  else
+    new_msg_data = {
+      type = msgtype
+    }
+  end
+  
   if not rawget(msg_types, msgtype) then
     error("unknown msgtype " .. tostring(msgtype))
   end
-  local msg = setmetatable(data or {}, Message_metatable)
+  local msg = setmetatable(new_msg_data, Message_metatable)
   
-  rawset(msg, "type", msgtype)
-
-  --default to mainnet
-  rawset(msg, "net", "main")
-  
-  --shallow-copy the data
-  if data then
-    for k, v in pairs(data) do
-      rawset(msg, k, v)
-    end
+  if msgtype == "frontier_req" or msgtype == "bulk_pull" or msgtype == "bulk_push" then
+    rawset(msg, "protocol", "tcp")
+  else
+    rawset(msg, "protocol", "udp")
   end
+  
   return msg
 end
 

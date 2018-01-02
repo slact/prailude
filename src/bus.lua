@@ -4,6 +4,7 @@ local uv = require "luv"
 local weak_key = {__mode = 'k'}
 local mm = require "mm"
 
+local log = require "prailude.log"
 
 local channels = setmetatable({}, {
   __index = function(t, k)
@@ -36,6 +37,7 @@ local function set_timer(channel, cb, is_coroutine, timeout)
     rawset(timers, cb, timer)
   end
   timer:start(timeout, 0, function()
+    log:debug("bus: channel %s timed out", channel)
     if is_coroutine then
       channels[channel].coroutines[cb] = nil
       coroutine.resume(cb, false)
@@ -70,6 +72,7 @@ local function run_ephemeral_callbacks(chan, tblname, is_coroutine, success, ...
 end
 
 local function publish(channel, success, ...)
+  log:debug("bus: publish%s to channel %s", success and "" or "_fail", channel)
   local count_permacallbacks, count_callbacks, count_coros
   local cbs = rawget(channels, channel)
   if cbs then
@@ -85,19 +88,29 @@ end
 
 local Bus = {}
 function Bus.pub(channel, ...)
-  mm {...}
+  assert(type(channel)=="string", "channel must be a string")
   publish(channel, true, ...)
 end
 function Bus.pub_fail(channel, ...)
+  assert(type(channel)=="string", "channel must be a string")
   publish(channel, false, ...)
 end
 
 function Bus.sub(channel, callback)
+  assert(type(channel)=="string", "channel must be a string")
+  assert(type(callback)=="function", "callback must be a function")
+  log:debug("bus: perma-subscribed on channel %s, callback %s", channel, callback)
   table.insert(channels[channel].callbacks, callback)
   return Bus
 end
 
 function Bus.once(channel, callback, timeout)
+  assert(type(channel)=="string", "channel must be a string")
+  assert(type(callback)=="function", "callback must be a function")
+  if timeout ~= nil then
+    assert(type(timeout) == "number", "timeout must be nil or a number")
+  end
+  log:debug("bus: one-time-subscribed on channel %s, callback %s timeout %d", channel, callback, timeout)
   channels[channel].callbacks = callback
   if timeout then
     set_timer(channel, callback, false, timeout)
@@ -107,7 +120,12 @@ end
 
 function Bus.yield(channel, timeout)
   local coro = coroutine.running()
+  assert(type(channel)=="string", "channel must be a string")
+  if timeout ~= nil then
+    assert(type(timeout) == "number", "timeout must be nil or a number")
+  end
   assert(coro, "called Bus.yield while not in a coroutine")
+  log:debug("bus: one-time-subscribed on channel %s, coroutine %s timeout %d", channel, coro, timeout)
   if timeout then
     set_timer(channel, coro, true, timeout)
   end

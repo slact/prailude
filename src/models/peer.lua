@@ -1,10 +1,12 @@
 local bus = require "prailude.bus"
 local mm = require "mm"
+local log = require "prailude.log"
+local sqlite3 = require "lsqlite3"
+local server = require "prailude.server"
 
 local Peer_instance = {
   send = function(self, message)
-    local msg = assert(message:pack())
-    bus.pub("message:send", message, self)
+    server.send(message, self)
   end
 }
 local peer_meta = {__index=Peer_instance}

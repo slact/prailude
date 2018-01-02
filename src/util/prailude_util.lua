@@ -1,12 +1,9 @@
 local bc = require "bc"
 local cutil = require "prailude.util.lowlevel"
-local lz = require "luazen"
-local blake2b_init, blake2b_update, blake2b_final = lz.blake2b_init, lz.blake2b_update, lz.blake2b_final
-local blake2b_hash = function(data, bytes)
-  local ctx = blake2b_init(bytes)
-  blake2b_update(ctx, data)
-  return blake2b_final(ctx)
-end
+local crypto = require "prailude.util.crypto"
+
+local blake2b_init, blake2b_update, blake2b_final = crypto.blake2b_init, crypto.blake2b_update, crypto.blake2b_finalize
+local blake2b_hash = crypto.blake2b_hash
 
 local unpack_account_with_checksum = cutil.unpack_account_with_checksum
 local pack_account_with_checksum = cutil.pack_account_with_checksum
@@ -18,6 +15,14 @@ local util = {
     update = blake2b_update,
     final = blake2b_final,
     hash = blake2b_hash,
+  },
+  
+  argon2d_hash = crypto.argon2d_raiblocks_hash,
+  
+  ed25519 = {
+    get_public_key = crypto.edDSA_blake2b_get_public_key,
+    sign = crypto.edDSA_blake2b_sign,
+    verify = crypto.dDSA_blake2b_verify
   },
 
   unpack_account = function(raw)

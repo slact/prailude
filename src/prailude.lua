@@ -5,6 +5,7 @@ local Prailude = {
   server =      require "prailude.server",
   bus =         require "prailude.bus",
   control =     require "prailude.control",
+  rainet =      require "prailude.rainet",
   -- instantiatable objects
   peer =        require "prailude.peer",
   message =     require "prailude.message",
@@ -13,10 +14,7 @@ local Prailude = {
   account =     require "prailude.account"
 }
 
-local uv = require "luv"
-
-function Prailude.run(port, bootstrap_peers)
-  Prailude.control.run(port, bootstrap_peers)
-end
+Prailude.initialize =   Prailude.control.initialize
+Prailude.run =          Prailude.control.run
 
 return Prailude

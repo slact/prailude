@@ -1,15 +1,8 @@
-local Logger = require "lualogging"
+local Logging = require "logging"
+local Console_Logging = require "logging.console"
 
+local active_logger = Console_Logging()
 
-local active_logger
+print("new active active_logger " .. tostring(active_logger))
 
-local Log = {}
-
-function set_log_prefix(prefix)
-  --meh
-  
-end
-
-setmetatable(Log, {
-  __index = active_logger
-})
+return active_logger

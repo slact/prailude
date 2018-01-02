@@ -1,8 +1,9 @@
-local Peer = require "raiblocks.peer"
+local Peer = require "prailude.peer"
+local log = require "prailude.log"
 local mm = require "mm"
 
 local peerdb = setmetatable({}, {__mode="k"})
-local peer_lru = setmetatable({}, __move="v"})
+local peer_lru = setmetatable({}, {__move="v"})
 
 
 local function parse_bootstrap_peer(peer_string)
@@ -22,8 +23,4 @@ end
 
 local Rainet = {}
 
-function Rainet.bootstrap(bootstrap_peers_list)
-  
-  
-end
-
+return Rainet

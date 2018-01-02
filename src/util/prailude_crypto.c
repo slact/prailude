@@ -133,8 +133,6 @@ static int lua_blake2b_finalize(lua_State *L) {
   return 1;
 }
 
-
-
 static int lua_edDSA_blake2b_get_public_key(lua_State *L) {
   const char *privkey;
   size_t      len;
@@ -258,7 +256,7 @@ static const struct luaL_Reg prailude_crypto_functions[] = {
   { NULL, NULL }
 };
 
-int luaopen_prailude_util_lowlevel(lua_State* lua) {
+int luaopen_prailude_util_crypto(lua_State* lua) {
   lua_newtable(lua);
 #if LUA_VERSION_NUM > 501
   luaL_setfuncs(lua,prailude_crypto_functions,0);
@@ -267,7 +265,7 @@ int luaopen_prailude_util_lowlevel(lua_State* lua) {
 #endif
   
   //initialize crappy PRNG for bulk ed25519 verification
-  raninit(&rng_ctx, 1);
+  raninit(&rng_ctx, 1); // WTF KIND OF SEED IS THAT?!
   
   return 1;
 }
