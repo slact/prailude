@@ -9,7 +9,12 @@ local Peer_instance = {
     server.send(message, self)
   end
 }
-local peer_meta = {__index=Peer_instance}
+local peer_meta = {
+  __index=Peer_instance,
+  __tostring=function(t)
+    return t.id
+  end
+}
 
 local known_peers = {}
 

@@ -1,6 +1,6 @@
-local parser = require "prailude.message.parser"
+local Parser = require "prailude.message.parser"
 local inspect = require "inspect"
-local server = require "prailude.server"
+local Server = require "prailude.server"
 
 local msg_types = {
   invalid =       0,
@@ -43,7 +43,7 @@ local Message_metatable = {
     type = "invalid",
   
     pack = function(self)
-      local packed, err = parser.pack_message(self)
+      local packed, err = Parser.pack_message(self)
       if not packed then return nil, err end
       rawset(self, "_packed", packed)
       return packed
@@ -115,11 +115,11 @@ function Message.new(msgtype, data) -- (data) is also ok, as long as there's a d
 end
 
 function Message.unpack(str)
-  local data, leftovers = parser.unpack_message(str)
+  local data, leftovers = Parser.unpack_message(str)
   if not data then
     return nil, leftovers
   else
-    return Message.new(data.type, data)
+    return Message.new(data)
   end
 end
 

@@ -3,6 +3,7 @@ local Message --require it later
 local bus = require "prailude.bus"
 local Peer -- require it later
 local util = require "prailude.util"
+local logger = require "prailude.log"
 
 local mm = require "mm"
 
@@ -46,12 +47,13 @@ function Server.initialize(port)
     
     local peer = Peer.get(addr.ip, addr.port)
     
-    mm(peer)
     local msg, leftovers_or_err = Message.unpack(chunk)
     if msg then
+      logger:debug("server: got message %s from peer %s", msg.type, tostring(peer))
       bus.pub( "message:receive", msg, peer, "udp")
       bus.pub(("message:receive:%s"):format(msg.type), msg, peer, "udp")
     else
+      logger:warn("server: bad message from peer %s", tostring(peer))
       bus.pub_fail("message:receive", leftovers_or_err, peer, "udp")
     end
   end)
@@ -67,7 +69,7 @@ function Server.send(msg, peer)
     local msg_packed = assert(msg:pack())
     assert(peer.address, "peer address missing")
     assert(peer.port, "peer port missing")
-    uv.udp_send(udp_server, msg_packed, peer.address, peer.port)
+    uv.udp_send(Server.udp, msg_packed, peer.address, peer.port)
     logger:debug("server: sent message %s to peer %s", msg.type, tostring(peer))
   end
   return Server
