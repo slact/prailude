@@ -100,7 +100,7 @@ function Bus.sub(channel, callback)
   assert(type(channel)=="string", "channel must be a string")
   assert(type(callback)=="function", "callback must be a function")
   log:debug("bus: perma-subscribed on channel %s, callback %s", channel, callback)
-  table.insert(channels[channel].callbacks, callback)
+  table.insert(channels[channel].permanent_callbacks, callback)
   return Bus
 end
 
