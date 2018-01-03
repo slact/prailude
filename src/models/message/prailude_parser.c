@@ -350,7 +350,8 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
           inet_ntop6((const unsigned char *)buf, ipv6addr_str, INET6_ADDRSTRLEN);
           buf+=16;
           
-          port = ntohs(*buf);
+          //port = ntohs(*buf); //nothing is network-order here
+          port = *(uint16_t *)buf;
           buf+=2;
           
           lua_createtable(L, 2, 0); //for the peer address and port
