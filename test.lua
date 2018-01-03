@@ -1,28 +1,16 @@
 local prailude = require "prailude"
 local mm = require "mm"
-local uv = require "luv"
 
---[[
-local raw="aaa\0\0\0\0aaacaaaaaadaaaaaaaaaaqa12"
-print(#raw)
+prailude.bus.sub("message:receive", function(ok, msg, peer)
+  if not ok then return end
+end)
 
-for i, v in pairs(prailude.util) do
-  print(i, v)
-end
-  
-
-local addr = prailude.util.unpack_account(raw)
-print(addr, #addr)
-print(prailude.util.pack_account(addr))
-
-print(prailude.util.to_hex("\1\2\3\4\5\0\xF3\xD9"))
+--prailude.bus.sub("run", function()
+--  local start_peer = prailude.peer.get("138.68.2.234", 7075)
+--  local start_message = prailude.message.new("keepalive")
+--  start_message:send(start_peer)
+--end)
 
 
-print(prailude.util.vanitygen("hello boys"))
-]]
-
-
-
-
-
-prailude.run(nil, "rai.raiblocks.net")
+prailude.initialize()
+prailude.run()
