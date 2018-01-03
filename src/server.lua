@@ -1,6 +1,7 @@
 local uv =  require "luv"
 local Message --require it later
 local bus = require "prailude.bus"
+local Rainet -- require it later
 local Peer -- require it later
 local util = require "prailude.util"
 local logger = require "prailude.log"
@@ -12,6 +13,7 @@ local mm = require "mm"
 local Server = {}
 function Server.initialize()
   Message = require "prailude.message"
+  Rainet = require "prailude.rainet"
   Peer = require "prailude.peer"
   
   local port = config.node.peering_port or 7075

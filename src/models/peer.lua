@@ -1,14 +1,47 @@
 local bus = require "prailude.bus"
 local mm = require "mm"
 local log = require "prailude.log"
-local sqlite3 = require "lsqlite3"
 local server = require "prailude.server"
 
+
+local schema = [[
+  CREATE TABLE IF NOT EXISTS peers (
+    address         TEXT,
+    port            INTEGER,
+    last_received   INTEGER,
+    last_sent       INTEGER,
+    last_keepalive  INTEGER,
+    PRIMARY KEY(address, port)
+  ) WITHOUT ROWID;
+  CREATE INDEX IF NOT EXISTS peer_last_received_idx  ON peers (last_received);
+  CREATE INDEX IF NOT EXISTS peer_last_sent_idx      ON peers (last_sent);
+  CREATE INDEX IF NOT EXISTS peer_last_keepalive_idx ON peers (last_keepalive);
+]]
+
+local known_peers = {}
 local db
 
 local Peer_instance = {
   send = function(self, message)
-    server.send(message, self)
+    return server.send(message, self)
+  end,
+  
+  update_timestamp = function(self, what)
+    local field = "last_"..what
+    local current_val = self[field]
+    local now = os.time() --yummy slowy syscall
+    if not current_val or current_val < now - 60 then --every minute update
+      local query = ("UPDATE peers SET %s=%d WHERE address=\"%s\" AND port=%d"):format(
+        field,
+        now,
+        self.address,
+        self.port
+      )
+      db:exec(query)
+      mm(db:errstr())
+      self[field]
+    end
+    return self
   end
 }
 local peer_meta = {
@@ -18,29 +51,34 @@ local peer_meta = {
   end
 }
 
-local known_peers = {}
-
 local function new_peer(peer_addr, peer_port)
-  if not peer_port then
-    local m1, m2 = peer_addr:match("(.*[^:]):(%d+)$")
-    if not m1 then
-      peer_port = 7075
-    else
-      peer_addr, peer_port = m1, m2
+  local peer
+  if type(peer_addr) == "table" and peer_port == nil then
+    peer = peer_addr
+    assert(peer.address, "peer address is required")
+    assert(peer.port, "peer port is required")
+    peer.id = ("%s:%d"):format(peer.address, peer.port)
+  else
+    if not peer_port then
+      local m1, m2 = peer_addr:match("(.*[^:]):(%d+)$")
+      if not m1 then
+        peer_port = 7075
+      else
+        peer_addr, peer_port = m1, m2
+      end
     end
+    peer = {
+      address = peer_addr,
+      port = peer_port,
+      id = ("%s:%.0f"):format(peer_addr, peer_port)
+    }
   end
   
-  local peer = {
-    address = peer_addr,
-    port = peer_port,
-    id = ("%s:%.0f"):format(peer_addr, peer_port)
-  }
   setmetatable(peer, peer_meta)
   return peer
 end
 
 local function ensure_ipv6_if_ipv4(peer_addr)
-  mm(peer_addr)
   local addr = { peer_addr:match("^(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)") }
   if #addr == 0 then
     return peer_addr
@@ -50,9 +88,11 @@ local function ensure_ipv6_if_ipv4(peer_addr)
 end
 
 local Peer = {
+  new = new_peer,
+  
   --find existing peer or make a new one
   get = function(peer_addr, peer_port)
-    local id    
+    local id, not_recently_seen
     if peer_addr and not peer_port then --maybe we were passed the peer id (addr:port)
       id = peer_addr
       peer_addr, peer_port = id:match("^(.*[^:]):(%d+)$")
@@ -62,15 +102,24 @@ local Peer = {
     end
     local peer = rawget(known_peers, id)
     if not peer then
+      local select = ("SELECT * FROM peers WHERE address=\"%s\" AND port=%d LIMIT 1"):format(peer_addr, peer_port)
+      for row in db:nrows(select) do
+        peer = new_peer(row)
+        break
+      end
+    end
+    if not peer then
+      not_recently_seen = true
       peer = new_peer(peer_addr, peer_port)
+      db:exec(("INSERT OR IGNORE INTO peers (address, port) VALUES( \"%s\", %i)"):format(peer_addr, peer_port))
     end
     rawset(known_peers, id, peer)
-    return peer
+    return peer, not_recently_seen
   end,
   
-  forget = function(peer)
-    known_peers[peer] = nil
-    return peer
+  initialize = function(db_ref)
+    db = db_ref
+    db:exec(schema)
   end
 }
 
