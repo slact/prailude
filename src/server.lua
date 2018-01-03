@@ -4,16 +4,17 @@ local bus = require "prailude.bus"
 local Peer -- require it later
 local util = require "prailude.util"
 local logger = require "prailude.log"
+local config = require "prailude.config"
 
 local mm = require "mm"
 
 --local log = require "prailude.log"
 local Server = {}
-function Server.initialize(port)
+function Server.initialize()
   Message = require "prailude.message"
   Peer = require "prailude.peer"
   
-  port = port or 7075
+  local port = config.node.peering_port or 7075
   
   local tcp_server = uv.new_tcp()
   assert(tcp_server:bind("::", port))

@@ -10,13 +10,9 @@ local log = require "prailude.log"-- "control"
 local Rainet = require "prailude.rainet"
 
 
-local bootstrapping_timer = nil
-function Control.bootstrap(bootstrap_peers)
-  assert(not bootstrapping_timer, "boostrap already started")
-end
-function Control.initialize(port, bootstrap_peers)
-  Server.initialize(port)
-  Rainet.initialize(bootstrap_peers)
+function Control.initialize()
+  Server.initialize()
+  Rainet.initialize()
 end
 
 function Control.run()

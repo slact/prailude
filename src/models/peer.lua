@@ -4,6 +4,8 @@ local log = require "prailude.log"
 local sqlite3 = require "lsqlite3"
 local server = require "prailude.server"
 
+local db
+
 local Peer_instance = {
   send = function(self, message)
     server.send(message, self)
@@ -38,6 +40,7 @@ local function new_peer(peer_addr, peer_port)
 end
 
 local function ensure_ipv6_if_ipv4(peer_addr)
+  mm(peer_addr)
   local addr = { peer_addr:match("^(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)") }
   if #addr == 0 then
     return peer_addr
