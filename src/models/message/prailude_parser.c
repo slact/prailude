@@ -610,7 +610,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
         return 0; //moar bytes plz
       lua_createtable(L, 0, 4);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "previous",     buf, 32);
-      buf += lua_rawsetfield_string_scanbuf(L, -1, "source",       buf, 32); //source account
+      buf += lua_rawsetfield_string_scanbuf(L, -1, "source",       buf, 32); //source block
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
       break;
