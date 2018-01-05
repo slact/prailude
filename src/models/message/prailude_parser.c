@@ -374,6 +374,7 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
         raise(SIGSTOP);
         return 0;
       }
+      
       lua_rawset(L, -3);
       buf+= parsed;
       break;
@@ -563,21 +564,22 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
       if(buflen < 136)
         luaL_error(L, "buflen too small to encode 'receive' block");
       buf += lua_table_field_fixedsize_string_encode(L, -1, "previous",     buf, 32);
-      buf += lua_table_field_fixedsize_string_encode(L, -1, "source",       buf, 32); //source account
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "source",       buf, 32); //source block
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",    buf, 64);
       //TODO: generate work
       break;
     case RAI_BLOCK_OPEN:
-      if(buflen < 168)
+      if(buflen < 200)
         luaL_error(L, "buflen too small to encode 'open' block");
-      buf += lua_table_field_fixedsize_string_encode(L, -1, "source",       buf, 32); //source account of first 'send' block
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "source",       buf, 32); //source block of first 'send' block
       buf += lua_table_field_fixedsize_string_encode(L, -1, "representative",buf, 32); //voting delegate
-      buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",    buf, 64);
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "account",       buf, 32); //opening account (pubkey)
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",     buf, 64);
       //TODO: generate work
       break;
     case RAI_BLOCK_CHANGE:
       if(buflen < 136) 
-        luaL_error(L, "buflen too small to encode 'open' block");
+        luaL_error(L, "buflen too small to encode 'change' block");
       buf += lua_table_field_fixedsize_string_encode(L, -1, "previous",     buf, 32);
       buf += lua_table_field_fixedsize_string_encode(L, -1, "representative",buf, 32);
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",    buf, 64);
@@ -613,11 +615,12 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
       break;
     case RAI_BLOCK_OPEN:
-      if(buflen < 168)
+      if(buflen < 200)
         return 0; //gib byts nao
       lua_createtable(L, 0, 4);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "source",       buf, 32); //source account of first 'send' block
       buf += lua_rawsetfield_string_scanbuf(L, -1, "representative",buf, 32); //voting delegate
+      buf += lua_rawsetfield_string_scanbuf(L, -1, "account",      buf, 32); //own acct (pubkey)
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
       break;
@@ -637,6 +640,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       *err = "tried to unpack 'not_a_block' type block";
       return 0;
   }
+  lua_rawsetfield_string_scanbuf(L, -1, "raw",     buf_start, buf - buf_start);
   return buf - buf_start;
 }
 
