@@ -354,12 +354,14 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
           port = *(uint16_t *)buf;
           buf+=2;
           
-          lua_createtable(L, 2, 0); //for the peer address and port
+          lua_createtable(L, 0, 2); //for the peer address and port
+          lua_pushliteral(L, "address");
           lua_pushstring(L, ipv6addr_str);
-          lua_rawseti(L, -2, 1);
+          lua_rawset(L, -3);
           
+          lua_pushliteral(L, "port");
           lua_pushnumber(L, port);
-          lua_rawseti(L, -2, 2);
+          lua_rawset(L, -3);
           
           lua_rawseti(L, -2, ++j); //store in peers table
         }
@@ -453,12 +455,11 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
         for(i=1; i<=8; i++) {
           lua_geti(L, -1, i);
           if(lua_istable(L, -1)) {
-            //we have a peer entry {"address", port}
-            lua_rawgeti(L, -1, 1); //address
+            lua_rawgetfield(L, -1, "address");
             peer_addr = lua_tostring(L, -1);
             lua_pop(L, 1);
             
-            lua_rawgeti(L, -1, 2); //port
+            lua_rawgetfield(L, -1, "port");
             peer_port = lua_tonumber(L, -1);
             lua_pop(L, 1);
             
