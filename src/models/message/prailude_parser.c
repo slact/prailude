@@ -569,7 +569,7 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
       //TODO: generate work
       break;
     case RAI_BLOCK_OPEN:
-      if(buflen < 200)
+      if(buflen < 168)
         luaL_error(L, "buflen too small to encode 'open' block");
       buf += lua_table_field_fixedsize_string_encode(L, -1, "source",       buf, 32); //source block of first 'send' block
       buf += lua_table_field_fixedsize_string_encode(L, -1, "representative",buf, 32); //voting delegate
@@ -615,7 +615,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
       break;
     case RAI_BLOCK_OPEN:
-      if(buflen < 200)
+      if(buflen < 168) {
         return 0; //gib byts nao
       lua_createtable(L, 0, 4);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "source",       buf, 32); //source account of first 'send' block
