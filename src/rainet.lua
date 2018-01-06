@@ -19,6 +19,7 @@ function Rainet.initialize()
   
   Rainet.db = sqlite3.open("network.db")
   db = Rainet.db
+  db:exec("PRAGMA synchronous = OFF") --don't really care of peer db is corrupted
   Peer.initialize(db)
   
   local function parse_bootstrap_peer(peer_string)
