@@ -5,9 +5,13 @@ local bus = require "prailude.bus"
 local config = require "prailude.config"
 local Message = require "prailude.message"
 
+local Timer = require "prailude.util.timer"
+
 local uv = require "luv"
 
 local mm = require "mm"
+
+
 
 
 local db
@@ -51,10 +55,15 @@ function Rainet.initialize()
   end)
   
   bus.sub("message:receive:keepalive", function(ok, msg, peer)
-    --parse it and stuff
-    mm("YEAH UPDATE THAT KEEPALIVE TIMESTAMP")
-    mm(msg)
     peer:update_timestamp("keepalive")
+    local inpeer
+    local now = os.time()
+    for _, peer_data in ipairs(msg.peers) do
+      inpeer = Peer.get(peer_data)
+      if (inpeer.last_keepalive or 0) < now - 120 then --2 minutes
+        inpeer:send(Message.new("keepalive", {peers = Peer.get8(inpeer)}))
+      end
+    end
   end)
 end
 
