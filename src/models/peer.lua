@@ -33,13 +33,12 @@ local Peer_instance = {
     if not current_val or current_val < now - 60 then --every minute update
       local query = ("UPDATE peers SET %s=%d WHERE address=\"%s\" AND port=%d"):format(
         field,
-        now,
+        os.time(),
         self.address,
         self.port
       )
       db:exec(query)
-      mm(db:errstr())
-      self[field]
+      self[field] = now
     end
     return self
   end
@@ -93,7 +92,11 @@ local Peer = {
   --find existing peer or make a new one
   get = function(peer_addr, peer_port)
     local id, not_recently_seen
-    if peer_addr and not peer_port then --maybe we were passed the peer id (addr:port)
+    if type(peer_addr) == "table" then
+      peer_port = peer_addr.port
+      peer_addr = peer_addr.address
+      id = ("%s:%.0f"):format(peer_addr, peer_port)
+    elseif peer_addr and not peer_port then --maybe we were passed the peer id (addr:port)
       id = peer_addr
       peer_addr, peer_port = id:match("^(.*[^:]):(%d+)$")
     else
@@ -115,6 +118,15 @@ local Peer = {
     end
     rawset(known_peers, id, peer)
     return peer, not_recently_seen
+  end,
+  
+  get8 = function(except_peer)
+    local select = ("SELECT * FROM peers WHERE last_keepalive > datetime('now') - 120 AND address !=\"%s\" AND port != %d ORDER BY RANDOM() LIMIT 8"):format(except_peer.address, except_peer.port)
+    local peers = {}
+    for row in db:nrows(select) do
+      table.insert(peers, new_peer(row))
+    end
+    return peers
   end,
   
   initialize = function(db_ref)
