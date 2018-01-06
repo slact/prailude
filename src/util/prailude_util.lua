@@ -1,6 +1,7 @@
 local bc = require "bc"
 local cutil = require "prailude.util.lowlevel"
 local crypto = require "prailude.util.crypto"
+local timer = require "prailude.util.timer"
 
 local blake2b_init, blake2b_update, blake2b_final = crypto.blake2b_init, crypto.blake2b_update, crypto.blake2b_finalize
 local blake2b_hash = crypto.blake2b_hash
@@ -10,6 +11,8 @@ local pack_account_with_checksum = cutil.pack_account_with_checksum
 local unpack_balance_raw = cutil.unpack_balance_raw
 
 local util = {
+  timer = timer,
+  
   blake2b = {
     init = blake2b_init,
     update = blake2b_update,
