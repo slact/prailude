@@ -6,16 +6,18 @@ local server = require "prailude.server"
 
 local schema = [[
   CREATE TABLE IF NOT EXISTS peers (
-    address         TEXT,
-    port            INTEGER,
-    last_received   INTEGER,
-    last_sent       INTEGER,
-    last_keepalive  INTEGER,
+    address                  TEXT,
+    port                     INTEGER,
+    last_received            INTEGER,
+    last_sent                INTEGER,
+    last_keepalive_sent      INTEGER,
+    last_keepalive_received  INTEGER,
     PRIMARY KEY(address, port)
   ) WITHOUT ROWID;
-  CREATE INDEX IF NOT EXISTS peer_last_received_idx  ON peers (last_received);
-  CREATE INDEX IF NOT EXISTS peer_last_sent_idx      ON peers (last_sent);
-  CREATE INDEX IF NOT EXISTS peer_last_keepalive_idx ON peers (last_keepalive);
+  CREATE INDEX IF NOT EXISTS peer_last_received_idx           ON peers (last_received);
+  CREATE INDEX IF NOT EXISTS peer_last_sent_idx               ON peers (last_sent);
+  CREATE INDEX IF NOT EXISTS peer_last_keepalive_sent_idx     ON peers (last_keepalive_sent);
+  CREATE INDEX IF NOT EXISTS peer_last_keepalive_received_idx ON peers (last_keepalive_received);
 ]]
 
 local known_peers = {}
@@ -23,13 +25,17 @@ local db
 
 local Peer_instance = {
   send = function(self, message)
-    return server.send(message, self)
+    local ret, err = server.send(message, self)
+    if ret then
+      self:update_timestamp("keepalive_sent")
+    end
+    return ret, err
   end,
   
   update_timestamp = function(self, what)
     local field = "last_"..what
     local current_val = self[field]
-    local now = os.time() --yummy slowy syscall
+    local now = os.time()
     if not current_val or current_val < now - 60 then --every minute update
       local query = ("UPDATE peers SET %s=%d WHERE address=\"%s\" AND port=%d"):format(
         field,
@@ -121,7 +127,17 @@ local Peer = {
   end,
   
   get8 = function(except_peer)
-    local select = ("SELECT * FROM peers WHERE last_keepalive > datetime('now') - 120 AND address !=\"%s\" AND port != %d ORDER BY RANDOM() LIMIT 8"):format(except_peer.address, except_peer.port)
+    local select = ("SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - 120 AND address !=\"%s\" AND port != %d ORDER BY RANDOM() LIMIT 8"):format(except_peer.address, except_peer.port)
+    local peers = {}
+    for row in db:nrows(select) do
+      table.insert(peers, new_peer(row))
+    end
+    return peers
+  end,
+  
+  get_active_needing_keepalive = function()
+    local now = os.time()
+    local select = ("SELECT * FROM peers WHERE last_keepalive_received > %i AND last_keepalive_received < %i ORDER BY RANDOM()"):format(now - Peer.inactivity_timeout, now - Peer.keepalive_interval)
     local peers = {}
     for row in db:nrows(select) do
       table.insert(peers, new_peer(row))
@@ -132,7 +148,11 @@ local Peer = {
   initialize = function(db_ref)
     db = db_ref
     db:exec(schema)
-  end
+  end,
+  
+  inactivity_timeout = 60*7,
+  keepalive_interval = 60*2,
+  
 }
 
 return Peer
