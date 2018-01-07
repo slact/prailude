@@ -17,8 +17,14 @@ export CONFIGURE_WITH_DEBUG=0
 
 export CC="gcc"
 
+luarocks="luarocks"
+
 for opt in $*; do
   case $opt in
+    5.1)
+      luarocks="luarocks-5.1";;
+    5.2)
+      luarocks="luarocks-5.2";;
     clang)
       export CC=$_clang;;
     clang-sanitize|sanitize|sanitize-memory)
@@ -56,4 +62,4 @@ done
 
 export CFLAGS="$CFLAGS -Wall -O$optimize_level -ggdb -fno-omit-frame-pointer -fPIC"
 
-sudo luarocks CC="$CC" CFLAGS="$CFLAGS" make
+sudo $luarocks CC="$CC" CFLAGS="$CFLAGS" make

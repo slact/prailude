@@ -27,6 +27,12 @@ for opt in $*; do
     leak|leakcheck)
       valgrind=1
       VALGRIND_OPT+=($VG_LEAKCHECK_OPT);;
+    luajit)
+      luajit=1;;
+    5.1)
+      lua51=1;;
+    5.2)
+      lua52=1;;
     debug-memcheck)
       valgrind=1
       VALGRIND_OPT+=($VG_MEMCHECK_OPT)
@@ -61,6 +67,12 @@ if [[ $debugger == 1 ]]; then
   kdbg ./lua -a ./test.lua
 elif [[ $valgrind == 1 ]]; then
   valgrind $VALGRIND_OPT ./lua ./test.lua
+elif [[ $luajit == 1 ]]; then
+  luajit ./test.lua
+elif [[ $lua51 == 1 ]]; then
+  lua5.1 ./test.lua
+elif [[ $lua52 == 1 ]]; then
+  lua5.2 ./test.lua
 else
   ./lua ./test.lua
 fi
