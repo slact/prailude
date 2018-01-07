@@ -1,30 +1,22 @@
 local Peer = require "prailude.peer"
-local log = require "prailude.log"
+local logger = require "prailude.log"
 local sqlite3 = require "lsqlite3"
 local bus = require "prailude.bus"
 local config = require "prailude.config"
 local Message = require "prailude.message"
-
+local Block = require "prailude.block"
 local Timer = require "prailude.util.timer"
 
 local uv = require "luv"
 
 local mm = require "mm"
 
-
-
-
 local db
 
 local Rainet = {}
 
-function Rainet.initialize()
-  local initial_peers = {}
-  
-  Rainet.db = sqlite3.open("network.db")
-  db = Rainet.db
-  db:exec("PRAGMA synchronous = OFF") --don't really care of peer db is corrupted
-  Peer.initialize(db)
+local function keepalive()
+  --bootstrap
   
   local function parse_bootstrap_peer(peer_string)
     local peer_name, peer_port
@@ -43,7 +35,6 @@ function Rainet.initialize()
   
   bus.sub("run", function()
     local keepalive = Message.new("keepalive", {peers = {}})
-    
     for _, preconfd_peer in pairs(config.node.preconfigured_peers) do
       local peer_name, peer_port = parse_bootstrap_peer(preconfd_peer)
       local addrinfo = uv.getaddrinfo(peer_name, nil, {socktype="dgram", protocol="packet"})
@@ -54,17 +45,68 @@ function Rainet.initialize()
     end
   end)
   
+  --keepalive parsing and response
   bus.sub("message:receive:keepalive", function(ok, msg, peer)
-    peer:update_timestamp("keepalive")
+    peer:update_timestamp("keepalive_received")
     local inpeer
     local now = os.time()
+    local keepalive_cutoff = now - Peer.keepalive_interval
+    if (peer.last_keepalive_sent or 0) < keepalive_cutoff then
+      peer:send(Message.new("keepalive", {peers = Peer.get8(peer)}))
+    end
     for _, peer_data in ipairs(msg.peers) do
       inpeer = Peer.get(peer_data)
-      if (inpeer.last_keepalive or 0) < now - 120 then --2 minutes
+      if (inpeer.last_keepalive_sent or 0) < keepalive_cutoff then
         inpeer:send(Message.new("keepalive", {peers = Peer.get8(inpeer)}))
       end
     end
   end)
+  
+  --periodic keepalive checks
+  Timer.interval(Peer.keepalive_interval * 1000, function()
+    local ping_these_peers = Peer.get_active_needing_keepalive()
+    for _, peer in pairs(ping_these_peers) do
+      peer:send(Message.new("keepalive", {peers = Peer.get8(peer)}))
+    end
+  end)
+end
+
+
+local function handle_blocks()
+  local function check_block(block, peer)
+    local ok, err = block:verify()
+    if not ok then
+      logger:debug("server: got block that failed verification (%s) from %s", err, tostring(peer))
+    else
+      return true
+    end
+  end
+  bus.sub("message:receive:publish", function(ok, msg, peer)
+    local block = Block.new(msg.block_type, msg.block)
+    check_block(block, peer)
+  end)
+  bus.sub("message:receive:confirm_req", function(ok, msg, peer)
+    local block = Block.new(msg.block_type, msg.block)
+    check_block(block, peer)
+  end)
+  bus.sub("message:receive:confirm_ack", function(ok, msg, peer)
+    local block = Block.new(msg.block_type, msg.block)
+    check_block(block, peer)
+  end)
+end
+
+function Rainet.initialize()
+  local initial_peers = {}
+  
+  Rainet.db = sqlite3.open("network.db")
+  db = Rainet.db
+  db:exec("PRAGMA synchronous = OFF") --don't really care of peer db is corrupted
+  Peer.initialize(db)
+  
+  keepalive()
+  
+  handle_blocks()
+  
 end
 
 return Rainet
