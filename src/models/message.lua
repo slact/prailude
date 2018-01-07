@@ -1,5 +1,4 @@
 local Parser = require "prailude.message.parser"
-local inspect = require "inspect"
 local Server = require "prailude.server"
 
 local msg_types = {
