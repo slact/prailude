@@ -10,6 +10,14 @@
 #include "argon2.h"
 #include "blake2.h"
 
+#if LUA_VERSION_NUM <= 501
+static void luaL_setmetatable (lua_State *L, const char *tname) {
+  luaL_checkstack(L, 1, "not enough stack slots");
+  luaL_getmetatable(L, tname);
+  lua_setmetatable(L, -2);
+}
+#endif
+
 
 //http://burtleburtle.net/bob/rand/smallprng.html
 typedef unsigned long int  u4;

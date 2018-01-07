@@ -19,6 +19,19 @@
   lua_pushstring(L, errmsg); \
   return 2
 
+#if LUA_VERSION_NUM <= 501
+static int lua_absindex( lua_State * const L, int const _idx) {
+  // positive or pseudo-index: return the index, else convert to absolute stack index
+  return (_idx > 0) ? _idx : (_idx <= LUA_REGISTRYINDEX) ? _idx : (lua_gettop( L) + 1 + _idx);
+}
+lua_Number lua_tonumberx (lua_State *L, int i, int *isnum) {
+  lua_Number n = lua_tonumber(L, i);
+  if (isnum != NULL) {
+    *isnum = (n != 0 || lua_isnumber(L, i));
+  }
+  return n;
+}
+#endif
 
 static int lua_rawgetfield(lua_State *const L, int tindex, const char *field) {
   tindex = lua_absindex(L, tindex);
@@ -27,12 +40,6 @@ static int lua_rawgetfield(lua_State *const L, int tindex, const char *field) {
   return 1;
 }
 
-//static int lua_absindex( lua_State * const L, int const _idx) {
-//  // positive or pseudo-index: return the index, else convert to absolute stack index
-//  return (_idx > 0) ? _idx : (_idx <= LUA_REGISTRYINDEX) ? _idx : (lua_gettop( L) + 1 + _idx);
-//}
-
-  
 static char *lua_dbgval(lua_State *L, int n) {
   static char buf[255];
   int         type = lua_type(L, n);
@@ -453,7 +460,7 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
       }
       else {
         for(i=1; i<=8; i++) {
-          lua_geti(L, -1, i);
+          lua_rawgeti(L, -1, i);
           if(lua_istable(L, -1)) {
             lua_rawgetfield(L, -1, "address");
             peer_addr = lua_tostring(L, -1);
