@@ -20,6 +20,11 @@ local util = {
     hash = blake2b_hash,
   },
   
+  work = {
+    verify = crypto.raiblocks_verify_work,
+    verify_test = crypto.raiblocks_verify_work,
+  },
+  
   argon2d_hash = crypto.argon2d_raiblocks_hash,
   
   ed25519 = {

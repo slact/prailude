@@ -96,6 +96,38 @@ static int lua_blake2b_hash(lua_State *L) {
   return 1;
 }
 
+static uint64_t const publish_test_threshold = 0xff00000000000000;
+static uint64_t const publish_full_threshold = 0xffffffc000000000;
+
+static int raiblocks_work_verify(lua_State *L, uint64_t threshold) {
+  uint64_t            result;
+  
+  size_t              len;
+  const char         *work, *block_hashable;
+  blake2b_state       state;
+  
+  work = luaL_checklstring(L, 2, &len);
+  if(len != 8) {
+    return luaL_error(L, "wrong length work value");
+  }
+  block_hashable = luaL_checklstring(L, 1, &len);
+  
+  blake2b_init(&state, sizeof(result));
+  blake2b_update(&state, work, 8);
+  blake2b_update(&state, block_hashable, len);
+  blake2b_final(&state, &result, sizeof(result));
+  return result >= threshold;
+}
+
+static int lua_raiblocks_work_verify_test(lua_State *L) {
+  lua_pushboolean(L, raiblocks_work_verify(L, publish_test_threshold));
+  return 1;
+}
+static int lua_raiblocks_work_verify_full(lua_State *L) {
+  lua_pushboolean(L, raiblocks_work_verify(L, publish_full_threshold));
+  return 1;
+}
+
 static int lua_blake2b_init(lua_State *L) {
   blake2b_state     *ctx;
   lua_Number         n;
@@ -246,6 +278,9 @@ static const struct luaL_Reg prailude_crypto_functions[] = {
   { "blake2b_update", lua_blake2b_update },
   { "blake2b_finalize", lua_blake2b_finalize },
   { "blake2b_hash", lua_blake2b_hash }, //(input_str, hash_bytes = 64)
+  
+  { "raiblocks_verify_test_work", lua_raiblocks_work_verify_test },
+  { "raiblocks_verify_work", lua_raiblocks_work_verify_full },
   
   { "edDSA_blake2b_get_public_key", lua_edDSA_blake2b_get_public_key },
   { "edDSA_blake2b_sign",           lua_edDSA_blake2b_sign },
