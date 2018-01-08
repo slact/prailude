@@ -72,7 +72,7 @@ local function run_ephemeral_callbacks(chan, tblname, is_coroutine, success, ...
 end
 
 local function publish(channel, success, ...)
-  log:debug("bus: publish%s to channel %s", success and "" or "_fail", channel)
+  --log:debug("bus: publish%s to channel %s", success and "" or "_fail", channel)
   local count_permacallbacks, count_callbacks, count_coros
   local cbs = rawget(channels, channel)
   if cbs then
@@ -99,7 +99,7 @@ end
 function Bus.sub(channel, callback)
   assert(type(channel)=="string", "channel must be a string")
   assert(type(callback)=="function", "callback must be a function")
-  log:debug("bus: perma-subscribed on channel %s, callback %s", channel, callback)
+  --log:debug("bus: perma-subscribed on channel %s, callback %s", channel, callback)
   table.insert(channels[channel].permanent_callbacks, callback)
   return Bus
 end
@@ -125,7 +125,7 @@ function Bus.yield(channel, timeout)
     assert(type(timeout) == "number", "timeout must be nil or a number")
   end
   assert(coro, "called Bus.yield while not in a coroutine")
-  log:debug("bus: one-time-subscribed on channel %s, coroutine %s timeout %d", channel, coro, timeout)
+  --log:debug("bus: one-time-subscribed on channel %s, coroutine %s timeout %d", channel, coro, timeout)
   if timeout then
     set_timer(channel, coro, true, timeout)
   end
