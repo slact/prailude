@@ -1,7 +1,7 @@
 #!/usr/bin/lua
 package = "prailude"
 local _version = "0.0.0"
-version = _version .. "-2"
+version = _version .. "-3"
 source = {
   url="git://github.com/slact/prailude"
   --tag="v".._version
@@ -19,7 +19,7 @@ dependencies = {
   "lua-cjson",
   "alt-getopt",
   "lualogging",
-  "lua-leveldb",
+  "lightningmdb",
   "lsqlite3",
   "mm"
 }
