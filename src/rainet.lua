@@ -105,11 +105,13 @@ function Rainet.initialize(db_ref)
 end
 
 function Rainet.bootstrap()
-  local fastpeers = Peer:get_lowest_ping(100)
+  local fastpeers = Peer:get_fastest_ping(100)
   local frontier_req = Message.new("frontier_req")
-  local coro = coroutine.create(function()
+  
+  local function frontier_fetcher()
     for _, peer in ipairs(fastpeers) do
-      local tcp, ok, err
+      local tcp, frontiers, ok, err
+      logger:debug("bootstrap: starting frontier pull from %s", tostring(peer))
       --do we have a tcp connection to the peer?
       tcp, err = peer:tcp()
       if not tcp then 
@@ -119,14 +121,23 @@ function Rainet.bootstrap()
       
       ok, err = tcp:send(frontier_req)
       if not ok then
+        tcp:close()
         logger:debug("bootstrap: failed to send frontier req to %s (%s)", tostring(peer), err)
+        break
+      end
+      
+      frontiers, err = tcp:read_frontiers() -- TODO: set min frontier-reading speed
+      if not frontiers then
+        tcp:close()
+        logger:debug("bootstrap: failed to read frontiers list from peer %s (%s)", tostring(peer), err)
         break
       end
       
       
     end
-    
-  end)
+  end
+  local frontier_fetch_coroutine = coroutine.create(frontier_fetcher)
+  coroutine.resume(frontier_fetch_coroutine)
 
   
 end

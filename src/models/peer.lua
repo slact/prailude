@@ -5,6 +5,16 @@ local server = require "prailude.server"
 local uv = require "luv"
 local gettime = require "prailude.util.lowlevel".gettime
 
+local function in_coroutine()
+  --5.1/5.2 compatibility
+  local coro, main = coroutine.running()
+  if not main or not coro then
+    return nil
+  else
+    return coro
+  end
+end
+
 local function is_ok(err)
   if err then
     return nil
@@ -41,23 +51,27 @@ local Peer_instance = {
     return ret, err
   end,
   
+  send_tcp = function(self, message, callback)
+    
+  end,
+  
   open_tcp = function(self, callback)
-    if self.tcp_connection then
+    if self.tcp then
       return error("tcp already open for peer " .. tostring(self))
     end
     self.tcp_connection = uv.new_tcp()
     if not callback then
-      local coro, is_main = coroutine.running()
-      if coro and not is_main then
+      local coro = in_coroutine()
+      if coro then
         callback = function(err)
-          if err then self.tcp_connection:close(); self.tcp_connection = nil end
+          if err then self:close_tcp() end
           coroutine.resume(coro, is_ok(err), err)
         end
       end
     else
       local actual_callback = callback
       callback = function(err)
-        if err then self.tcp:close(); self.tcp = nil end
+        if err then self:close_tcp() end
         return actual_callback(is_ok(err), err)
       end
     end
@@ -65,6 +79,66 @@ local Peer_instance = {
     uv.tcp_connect(self.tcp, self.address, self.port, callback)
   end,
   
+  send_tcp = function(self, message)
+    if not self.tcp then
+      error("no open tcp connection for peer %s", tostring(self))
+    end
+    return self.tcp:write(message:pack())
+  end,
+  
+  read_frontiers = function(self, callback)
+    assert(self.tcp, "expected an open tcp connection, instead there was an abyss of packets lost to time")
+    local coro
+    if not callback then
+      coro = in_coroutine()
+      assert(coro, "no callback given, should have been in a coroutine")
+      callback = function(frontiers, err)
+        coroutine.resume(frontiers, err)
+      end
+    end
+    
+    local frontiers_so_far = {}
+    local buf = {}
+    self.tcp:read_start(function(err, chunk)
+      if err then
+        self.tcp:read_stop()
+        self:close_tcp()
+        return callback(nil, err)
+      end
+      
+      table.insert(buf, chunk)
+      local fresh_frontiers, leftover_buf_or_err, done = parser.parse_frontier(table.concat(buf))
+      
+      if not fresh_frontiers then
+        self.tcp:read_stop()
+        self:close_tcp()
+        return callback(nil, leftover_buf_or_err)
+      elseif done then
+        -- no more frontiers here
+        self.tcp:read_stop()
+        return callback(frontiers)
+      else
+        --got some new frontiers
+        for _, frontier in pairs(fresh_frontiers) do
+          table.insert(frontiers_so_far, frontier)
+        end
+        if leftover_buf_or_err and #leftover_buf_or_err > 0 then
+          buf = {leftover_buf_or_err}
+        end
+      end
+    end)
+    if coro then
+      return coroutine.yield()
+    end
+  end,
+  
+  close_tcp = function(self)
+    if not self.tcp then
+      error("trying to close unopened TCP connection to " .. tostring(self))
+    end
+    self.tcp:close()
+    self.tcp = nil
+  end,
   
   update_timestamp = function(self, what)
     local field = "last_"..what
@@ -172,6 +246,17 @@ local Peer = {
   get_active_needing_keepalive = function()
     local now = gettime()
     local select = ("SELECT * FROM peers WHERE last_keepalive_received > %i AND last_keepalive_received < %i ORDER BY RANDOM()"):format(now - Peer.inactivity_timeout, now - Peer.keepalive_interval)
+    local peers = {}
+    for row in db:nrows(select) do
+      table.insert(peers, new_peer(row))
+    end
+    return peers
+  end,
+  
+  
+  get_fastest_ping = function(self, n)
+    n = n or 1
+    local select = "SELECT *, (last_keepalive_received - last_keepalive_sent) AS ping FROM peers WHERE last_keepalive_received NOT NULL AND ping >= 0 ORDER BY ping ASC limit " .. n
     local peers = {}
     for row in db:nrows(select) do
       table.insert(peers, new_peer(row))

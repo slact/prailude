@@ -52,7 +52,7 @@ function Server.initialize()
     
     local msg, leftovers_or_err = Message.unpack(chunk)
     if msg then
-      logger:debug("server: got message %s from peer %s", msg.type, tostring(peer))
+      --logger:debug("server: got message %s from peer %s", msg.type, tostring(peer))
       bus.pub( "message:receive", msg, peer, "udp")
       bus.pub(("message:receive:%s"):format(msg.type), msg, peer, "udp")
     else

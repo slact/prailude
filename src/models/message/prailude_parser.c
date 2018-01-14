@@ -775,9 +775,67 @@ static int prailude_unpack_message(lua_State *L) {
   }
 }
 
+static int prailude_unpack_frontiers(lua_State *L) {
+  size_t      sz;
+  const char *buf = luaL_checklstring(L, 1, &sz);
+  const char *end = &buf[sz];
+  const char *cur = buf;
+  int         i = 0;
+  int         done = 0;
+  
+  const char *zero_acct = "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+                          "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+                          "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+                          "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+  
+  lua_newtable(L);
+  
+  for(cur = buf; cur < end; cur += 128) {
+    
+    if(memcmp(cur, zero_acct, 64) == 0) {
+      //last frontier
+      done = 1;
+      break;
+    }
+    
+    lua_createtable(L, 0, 2);
+    
+    lua_pushliteral(L, "account");
+    lua_pushlstring(L, cur, 64);
+    lua_rawset(L, -2);
+    
+    lua_pushliteral(L, "hash");
+    lua_pushlstring(L, &cur[64], 64);
+    lua_rawset(L, -2);
+    
+    lua_rawseti(L, -1, ++i);
+  }
+  
+  //leftovers
+  if(cur >= end) {
+    lua_pushnil(L);
+  }
+  else {
+    lua_pushlstring(L, cur, (end - cur));
+  }
+  
+  //done?
+  lua_pushboolean(L, done);
+  
+  return 3;
+}
+
+
+static int prailude_pack_frontiers(lua_State *L) {
+  return luaL_error(L, "Not yet implemented");
+}
+
 static const struct luaL_Reg prailude_parser_functions[] = {
   { "pack_message", prailude_pack_message },
   { "unpack_message", prailude_unpack_message },
+  
+  { "unpack_frontiers", prailude_unpack_frontiers },
+  { "pack_frontiers", prailude_pack_frontiers },
   // { "parse_frontier_stream", prailude_parse_frontier_stream },
   // { "parse_bulk_stream", prailude_parse_bulk_stream },
   { NULL, NULL }
