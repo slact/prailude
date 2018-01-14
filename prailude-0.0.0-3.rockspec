@@ -19,8 +19,9 @@ dependencies = {
   "lua-cjson",
   "alt-getopt",
   "lualogging",
-  "lightningmdb",
+  --"lightningmdb", --nope
   "lsqlite3",
+  "luaprompt",
   "mm"
 }
 build = {

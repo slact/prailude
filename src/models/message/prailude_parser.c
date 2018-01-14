@@ -422,12 +422,14 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       if(buflen < 48) { raise(SIGSTOP); return 0;}
       lua_rawsetfield_string(L, -1, "account", buf, 32); //start_account
       buf+=32;
-      num = ntohl(*(uint32_t *)buf);
+      //num = ntohl(*(uint32_t *)buf); no network-ordering on the wire
+      num = *(uint32_t *)buf;
       lua_rawsetfield_number(L, -1, "frontier_age", num);
-      buf+=8;
-      num = ntohl(*(uint32_t *)buf);
+      buf+=4;
+      //num = ntohl(*(uint32_t *)buf); no network-ordering on the wire
+      num = *(uint32_t *)buf;
       lua_rawsetfield_number(L, -1, "frontier_count", num);
-      buf+=8;
+      buf+=4;
       break;
   }
   return buf - buf_start;
@@ -531,19 +533,42 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
         *err = "not enough space to write 'frontier_req' message";
         return 0;
       }
-      buf += lua_table_field_fixedsize_string_encode(L, -1, "account",     buf, 32); //start_account
-      
+      lua_rawgetfield(L, -1, "account");
+      if(lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        memset(buf, '\0', 32);
+        buf += 32;
+      }
+      else {
+        lua_pop(L, 1);
+        buf += lua_table_field_fixedsize_string_encode(L, -1, "account",     buf, 32); //start_account
+      }
       lua_rawgetfield(L, -1, "frontier_age");
-      num = lua_tonumber(L, -1);
-      lua_pop(L, 1);
-      *(uint16_t *)buf=htonl(num);
-      buf+=sizeof(uint16_t);
+      if(lua_isnil(L, -1)) {
+        //default is max age
+        
+        strcpy(buf, "\xff\xff\xff\xff");
+      }
+      else {
+        num = lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        //*(uint64_t *)buf=htonl(num); // no network-byte order on the wire
+        *(uint64_t *)buf=num;
+      }
+      buf+=8;
       
       lua_rawgetfield(L, -1, "frontier_count");
-      num = lua_tonumber(L, -1);
-      lua_pop(L, 1);
-      *(uint16_t *)buf=htonl(num);
-      buf+=sizeof(uint16_t);
+      if(lua_isnil(L, -1)) {
+        //default is max count
+        strcpy(buf, "\xff\xff\xff\xff");
+      }
+      else {
+        num = lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        //*(uint64_t *)buf=htonl(num); // no network-byte order on the wire
+        *(uint64_t *)buf=num;
+      }
+      buf+=8;
       
       break;
   }
@@ -603,8 +628,10 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
   const char      *buf_start = buf;
   switch(blocktype) {
     case RAI_BLOCK_SEND:
-      if(buflen < 152)
+      if(buflen < 152) {
+        raise(SIGSTOP);
         return 0; //need moar bytes
+      }
       lua_createtable(L, 0, 5);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "previous",     buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "destination",  buf, 32); //destination account
@@ -614,8 +641,10 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       //TODO: generate work
       break;
     case RAI_BLOCK_RECEIVE:
-      if(buflen < 136)
+      if(buflen < 136) {
+        raise(SIGSTOP);
         return 0; //moar bytes plz
+      }
       lua_createtable(L, 0, 4);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "previous",     buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "source",       buf, 32); //source block
@@ -624,7 +653,9 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       break;
     case RAI_BLOCK_OPEN:
       if(buflen < 168) {
+        raise(SIGSTOP);
         return 0; //gib byts nao
+      }
       lua_createtable(L, 0, 4);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "source",       buf, 32); //source account of first 'send' block
       buf += lua_rawsetfield_string_scanbuf(L, -1, "representative",buf, 32); //voting delegate
@@ -633,8 +664,10 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
       break;
     case RAI_BLOCK_CHANGE:
-      if(buflen < 136) 
+      if(buflen < 136) {
+        raise(SIGSTOP);
         return 0; //such bytes, not enough wow
+      }
       lua_createtable(L, 0, 4);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "previous",     buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "representative",buf, 32);

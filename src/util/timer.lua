@@ -5,10 +5,10 @@ function Timer.delay(delay, callback)
   assert(type(delay)=="number", "delay must be a number")
   
   local timer = uv.new_timer()
-  local coro
+  local coro, is_main
   if not callback then
-    coro = coroutine.running()
-    assert(coro, "Timer.delay called without callback, expected a coroutine")
+    coro, is_main = coroutine.running()
+    assert(coro and not is_main, "Timer.delay called without callback, expected a coroutine")
     callback = function()
       coroutine.resume(coro)
     end

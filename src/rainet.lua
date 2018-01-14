@@ -1,6 +1,5 @@
 local Peer = require "prailude.peer"
 local logger = require "prailude.log"
-local sqlite3 = require "lsqlite3"
 local bus = require "prailude.bus"
 local config = require "prailude.config"
 local Message = require "prailude.message"
@@ -95,17 +94,40 @@ local function handle_blocks()
   end)
 end
 
-function Rainet.initialize()
+function Rainet.initialize(db_ref)
   local initial_peers = {}
   
-  Rainet.db = sqlite3.open("network.db")
-  db = Rainet.db
-  db:exec("PRAGMA synchronous = OFF") --don't really care of peer db is corrupted
+  db = db_ref
   Peer.initialize(db)
   
   keepalive()
-  
   handle_blocks()
+end
+
+function Rainet.bootstrap()
+  local fastpeers = Peer:get_lowest_ping(100)
+  local frontier_req = Message.new("frontier_req")
+  local coro = coroutine.create(function()
+    for _, peer in ipairs(fastpeers) do
+      local tcp, ok, err
+      --do we have a tcp connection to the peer?
+      tcp, err = peer:tcp()
+      if not tcp then 
+        logger:debug("bootstrap: can't init tcp connection to %s (%s)", tostring(peer), err)
+        break
+      end
+      
+      ok, err = tcp:send(frontier_req)
+      if not ok then
+        logger:debug("bootstrap: failed to send frontier req to %s (%s)", tostring(peer), err)
+        break
+      end
+      
+      
+    end
+    
+  end)
+
   
 end
 

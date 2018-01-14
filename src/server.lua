@@ -67,13 +67,14 @@ end
 
 function Server.send(msg, peer)
   if msg.protocol =="tcp" then
-    error("tcp messaging not yet implemented")
+    error("send tcp messages directly through peers")
   else --udp by default
     local msg_packed = assert(msg:pack())
     assert(peer.address, "peer address missing")
     assert(peer.port, "peer port missing")
+    --logger:debug("server: seding message %s to peer %s", msg.type, tostring(peer))
     uv.udp_send(Server.udp, msg_packed, peer.address, peer.port)
-    logger:debug("server: sent message %s to peer %s", msg.type, tostring(peer))
+    --logger:debug("server: sent message %s to peer %s", msg.type, tostring(peer))
   end
   return Server
 end

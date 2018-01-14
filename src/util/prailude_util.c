@@ -173,6 +173,40 @@ static int raiutil_to_hex(lua_State *L) {
   return 1;
 }
 
+
+// from luasocket
+/*-------------------------------------------------------------------------*\
+* Gets time in s, relative to January 1, 1970 (UTC)
+* Returns
+*   time in s.
+\*-------------------------------------------------------------------------*/
+#ifdef _WIN32
+#include <windows.h>
+static double timeout_gettime(void) {
+    FILETIME ft;
+    double t;
+    GetSystemTimeAsFileTime(&ft);
+    /* Windows file time (time since January 1, 1601 (UTC)) */
+    t  = ft.dwLowDateTime/1.0e7 + ft.dwHighDateTime*(4294967296.0/1.0e7);
+    /* convert to Unix Epoch time (time since January 1, 1970 (UTC)) */
+    return (t - 11644473600.0);
+}
+#else
+#include <time.h>
+#include <sys/time.h>
+static double timeout_gettime(void) {
+    struct timeval v;
+    gettimeofday(&v, (struct timezone *) NULL);
+    /* Unix Epoch time (time since January 1, 1970 (UTC)) */
+    return v.tv_sec + v.tv_usec/1.0e6;
+}
+#endif
+
+static int raiutil_gettime(lua_State *L) {
+  lua_pushnumber(L, timeout_gettime());
+  return 1;
+}
+
 static const struct luaL_Reg prailude_util_functions[] = {
   { "unpack_account_with_checksum", raiutil_unpack_account_with_checksum },
   { "pack_account_with_checksum", raiutil_pack_account_with_checksum },
@@ -180,6 +214,8 @@ static const struct luaL_Reg prailude_util_functions[] = {
   { "pack_balance_raw", raiutil_pack_balance_raw },
   { "to_hex", raiutil_to_hex },
   { "print_hex", raiutil_print_hex },
+  
+  { "gettime", raiutil_gettime },
   
   { NULL, NULL }
 };

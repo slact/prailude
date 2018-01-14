@@ -8,17 +8,28 @@ local Control = {}
 local mm = require "mm"
 local log = require "prailude.log"-- "control"
 local Rainet = require "prailude.rainet"
+local Block = require "prailude.block"
+local sqlite3 = require "lsqlite3"
+local Timer = require "prailude.util.timer"
 
 
 function Control.initialize()
-  Server.initialize()
-  Rainet.initialize()
+  local db = sqlite3.open("raiblocks.db")
+  db:exec("PRAGMA synchronous = OFF") --don't really care if the db lags behind on crash
+  Block.initialize(db)
+  Server.initialize(db)
+  Rainet.initialize(db)
+  
 end
 
 function Control.run()
   --do some other stuff maybe
-  local run_timer = uv.new_timer():start(0, 0, function()
+  Timer.delay(0, function()
     bus.pub("run")
+  end)
+  
+  Timer.delay(10*1000, function()
+    Rainet.bootstrap()
   end)
   uv.run()
 end

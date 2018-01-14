@@ -2,16 +2,25 @@ local bus = require "prailude.bus"
 local mm = require "mm"
 local log = require "prailude.log"
 local server = require "prailude.server"
+local uv = require "luv"
+local gettime = require "prailude.util.lowlevel".gettime
 
+local function is_ok(err)
+  if err then
+    return nil
+  else
+    return true
+  end
+end
 
 local schema = [[
   CREATE TABLE IF NOT EXISTS peers (
     address                  TEXT,
     port                     INTEGER,
-    last_received            INTEGER,
-    last_sent                INTEGER,
-    last_keepalive_sent      INTEGER,
-    last_keepalive_received  INTEGER,
+    last_received            REAL,
+    last_sent                REAL,
+    last_keepalive_sent      REAL,
+    last_keepalive_received  REAL,
     PRIMARY KEY(address, port)
   ) WITHOUT ROWID;
   CREATE INDEX IF NOT EXISTS peer_last_received_idx           ON peers (last_received);
@@ -32,14 +41,39 @@ local Peer_instance = {
     return ret, err
   end,
   
+  open_tcp = function(self, callback)
+    if self.tcp_connection then
+      return error("tcp already open for peer " .. tostring(self))
+    end
+    self.tcp_connection = uv.new_tcp()
+    if not callback then
+      local coro, is_main = coroutine.running()
+      if coro and not is_main then
+        callback = function(err)
+          if err then self.tcp_connection:close(); self.tcp_connection = nil end
+          coroutine.resume(coro, is_ok(err), err)
+        end
+      end
+    else
+      local actual_callback = callback
+      callback = function(err)
+        if err then self.tcp:close(); self.tcp = nil end
+        return actual_callback(is_ok(err), err)
+      end
+    end
+    assert(callback, "callback or coroutine required")
+    uv.tcp_connect(self.tcp, self.address, self.port, callback)
+  end,
+  
+  
   update_timestamp = function(self, what)
     local field = "last_"..what
     local current_val = self[field]
-    local now = os.time()
+    local now = gettime()
     if not current_val or current_val < now - 60 then --every minute update
-      local query = ("UPDATE peers SET %s=%d WHERE address=\"%s\" AND port=%d"):format(
+      local query = ("UPDATE peers SET %s=%f WHERE address=\"%s\" AND port=%f"):format(
         field,
-        os.time(),
+        now,
         self.address,
         self.port
       )
@@ -136,7 +170,7 @@ local Peer = {
   end,
   
   get_active_needing_keepalive = function()
-    local now = os.time()
+    local now = gettime()
     local select = ("SELECT * FROM peers WHERE last_keepalive_received > %i AND last_keepalive_received < %i ORDER BY RANDOM()"):format(now - Peer.inactivity_timeout, now - Peer.keepalive_interval)
     local peers = {}
     for row in db:nrows(select) do
