@@ -38,7 +38,7 @@ local util = {
     return unpack_account_with_checksum(raw, blake2b_hash(raw, 5))
   end,
 
-  pack_account = function(account, opt)
+  pack_account = function(account)
     if #account ~= 64 then
       return nil, "invalid account", "wrong length"
     end
@@ -90,7 +90,7 @@ local util = {
       return nil, "invalid balance"
     end
     local str_balance_raw, err = unpack_balance_raw(raw)
-    if not str_balance_raw then 
+    if not str_balance_raw then
       return nil, err
     end
     local balance = bc.number(str_balance_raw)

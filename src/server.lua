@@ -1,9 +1,7 @@
 local uv =  require "luv"
 local Message --require it later
 local bus = require "prailude.bus"
-local Rainet -- require it later
 local Peer -- require it later
-local util = require "prailude.util"
 local logger = require "prailude.log"
 local config = require "prailude.config"
 
@@ -13,20 +11,24 @@ local mm = require "mm"
 local Server = {}
 function Server.initialize()
   Message = require "prailude.message"
-  Rainet = require "prailude.rainet"
   Peer = require "prailude.peer"
   
   local port = config.node.peering_port or 7075
   
   local tcp_server = uv.new_tcp()
   assert(tcp_server:bind("::", port))
-  assert(tcp_server:listen(128 --[[connection backlog size]], function(err, addr)
-    assert(not err, err)
+  assert(tcp_server:listen(128 --[[connection backlog size]], function(listen_err, listen_addr)
+    if listen_err then
+      error(("error listening from client %s: %s"):format(listen_addr, listen_err))
+    end
     local client = uv.new_tcp()
-    assert(tcp:accept(client))
+    assert(tcp_server:accept(client))
     client:read_start(function(err, chunk, addr)
       --print("TCP", err, chunk, etc)
       -- Crash hard on errors
+      if err then
+        error(("read error from client %s: %s"):format(addr, err))
+      end
       local data, leftovers_or_err = Message.unpack(chunk)
       if data then
         bus.pub("message:receive", data, addr, "tcp")

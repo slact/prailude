@@ -46,6 +46,9 @@ local function keepalive()
   
   --keepalive parsing and response
   bus.sub("message:receive:keepalive", function(ok, msg, peer)
+    if not ok then
+      return logger:warning("rainet: message:receive:keepalive failed from peer %s: %s", peer, msg)
+    end
     peer:update_timestamp("keepalive_received")
     local inpeer
     local now = os.time()
@@ -81,21 +84,30 @@ local function handle_blocks()
     end
   end
   bus.sub("message:receive:publish", function(ok, msg, peer)
+    if not ok then
+      return logger:warning("rainet: message:receive:publish from %s failed: %s", peer, msg)
+    end
     local block = Block.new(msg.block_type, msg.block)
     check_block(block, peer)
   end)
   bus.sub("message:receive:confirm_req", function(ok, msg, peer)
+    if not ok then
+      return logger:warning("rainet: message:receive:confirm_req from %s failed: %s", peer, msg)
+    end
     local block = Block.new(msg.block_type, msg.block)
     check_block(block, peer)
   end)
   bus.sub("message:receive:confirm_ack", function(ok, msg, peer)
+    if not ok then
+      return logger:warning("rainet: message:receive:confirm_ack from %s failed: %s", peer, msg)
+    end
     local block = Block.new(msg.block_type, msg.block)
     check_block(block, peer)
   end)
 end
 
 function Rainet.initialize(db_ref)
-  local initial_peers = {}
+  --local initial_peers = {}
   
   db = db_ref
   Peer.initialize(db)
@@ -111,26 +123,26 @@ function Rainet.bootstrap()
   local function frontier_fetcher()
     for _, peer in ipairs(fastpeers) do
       local frontiers, ok, err
-      logger:debug("bootstrap: starting frontier pull from %s", tostring(peer))
+      logger:debug("bootstrap: starting frontier pull from %s", peer)
       --do we have a tcp connection to the peer?
       ok, err = peer:open_tcp()
-      if not ok then 
-        logger:debug("bootstrap: can't init tcp connection to %s (%s)", tostring(peer), err)
+      if not ok then
+        logger:debug("bootstrap: can't init tcp connection to %s (%s)", peer, err)
         break
       end
       
-      logger:debug("bootstrap: opened tcp connection to %s", tostring(peer))
+      logger:debug("bootstrap: opened tcp connection to %s", peer)
       
-      ok, err = tcp:send(frontier_req)
+      ok, err = peer:send_tcp(frontier_req)
       if not ok then
-        tcp:close()
+        peer:close_tcp()
         logger:debug("bootstrap: failed to send frontier req to %s (%s)", tostring(peer), err)
         break
       end
       
-      frontiers, err = tcp:read_frontiers() -- TODO: set min frontier-reading speed
+      frontiers, err = peer:read_frontiers() -- TODO: set min frontier-reading speed
       if not frontiers then
-        tcp:close()
+        peer:close_tcp()
         logger:debug("bootstrap: failed to read frontiers list from peer %s (%s)", tostring(peer), err)
         break
       end
