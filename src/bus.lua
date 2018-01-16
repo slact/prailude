@@ -1,5 +1,6 @@
 --dead simple named-event manager
 local uv = require "luv"
+local coroutine = require "prailude.util.coroutine"
 
 local weak_key = {__mode = 'k'}
 local mm = require "mm"

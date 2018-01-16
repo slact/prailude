@@ -29,6 +29,7 @@ build = {
   modules = {
     ["prailude.util"] =          "src/util/prailude_util.lua",
     ["prailude.util.timer"] =    "src/util/timer.lua",
+    ["prailude.util.coroutine"] ="src/util/coroutine.lua",
     ["prailude.util.lowlevel"] = {
       sources = {
         "src/util/prailude_util.c",

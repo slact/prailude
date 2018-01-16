@@ -33,13 +33,13 @@ local function keepalive()
   end
   
   bus.sub("run", function()
-    local keepalive = Message.new("keepalive", {peers = {}})
+    local keepalive_msg = Message.new("keepalive", {peers = {}})
     for _, preconfd_peer in pairs(config.node.preconfigured_peers) do
       local peer_name, peer_port = parse_bootstrap_peer(preconfd_peer)
       local addrinfo = uv.getaddrinfo(peer_name, nil, {socktype="dgram", protocol="packet"})
       for _, addrinfo_entry in ipairs(addrinfo) do
         local peer = Peer.get(addrinfo_entry.addr, peer_port)
-        peer:send(keepalive)
+        peer:send(keepalive_msg)
       end
     end
   end)
@@ -110,14 +110,16 @@ function Rainet.bootstrap()
   
   local function frontier_fetcher()
     for _, peer in ipairs(fastpeers) do
-      local tcp, frontiers, ok, err
+      local frontiers, ok, err
       logger:debug("bootstrap: starting frontier pull from %s", tostring(peer))
       --do we have a tcp connection to the peer?
-      tcp, err = peer:tcp()
-      if not tcp then 
+      ok, err = peer:open_tcp()
+      if not ok then 
         logger:debug("bootstrap: can't init tcp connection to %s (%s)", tostring(peer), err)
         break
       end
+      
+      logger:debug("bootstrap: opened tcp connection to %s", tostring(peer))
       
       ok, err = tcp:send(frontier_req)
       if not ok then
@@ -136,10 +138,7 @@ function Rainet.bootstrap()
       
     end
   end
-  local frontier_fetch_coroutine = coroutine.create(frontier_fetcher)
-  coroutine.resume(frontier_fetch_coroutine)
-
-  
+  coroutine.wrap(frontier_fetcher)()
 end
 
 return Rainet

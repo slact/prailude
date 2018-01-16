@@ -1,14 +1,15 @@
 local uv = require "luv"
+local coroutine = require "prailude.util.coroutine"
 
 local Timer = {}
 function Timer.delay(delay, callback)
   assert(type(delay)=="number", "delay must be a number")
   
   local timer = uv.new_timer()
-  local coro, is_main
+  local coro
   if not callback then
-    coro, is_main = coroutine.running()
-    assert(coro and not is_main, "Timer.delay called without callback, expected a coroutine")
+    coro = coroutine.running()
+    assert(coro, "Timer.delay called without callback, expected a coroutine")
     callback = function()
       coroutine.resume(coro)
     end

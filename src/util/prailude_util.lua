@@ -2,6 +2,7 @@ local bc = require "bc"
 local cutil = require "prailude.util.lowlevel"
 local crypto = require "prailude.util.crypto"
 local timer = require "prailude.util.timer"
+local coroutine_util = require "prailude.util.coroutine"
 
 local blake2b_init, blake2b_update, blake2b_final = crypto.blake2b_init, crypto.blake2b_update, crypto.blake2b_finalize
 local blake2b_hash = crypto.blake2b_hash
@@ -108,6 +109,8 @@ local util = {
   
   to_hex = cutil.to_hex,
   print_hex = cutil.print_hex,
+  
+  coroutine = coroutine_util
 }
 
 return util

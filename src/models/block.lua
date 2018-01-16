@@ -67,7 +67,7 @@ local Block_instance = {
     end
   end,
   hash = function(self)
-    return blake2b_hash(raw, 32)
+    return blake2b_hash(self.raw, 32)
   end,
   
   verify = function(self)
@@ -83,6 +83,9 @@ local Block_instance = {
   end,
   verify_PoW = function(self)
     return verify_block_PoW(self:hashable(), self.work)
+  end,
+  verify_test_PoW = function(self)
+    return verify_block_PoW_test(self:hashable(), self.work)
   end,
   verify_signature = function(self, account)
     return true --not implemented yet
@@ -111,7 +114,7 @@ function Block.new(block_type, data)
 end
 
 function Block.find(hash)
-  
+  --TODO
 end
 
 function Block.get(data)

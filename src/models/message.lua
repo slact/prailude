@@ -13,22 +13,6 @@ local msg_types = {
   frontier_req =  8
 }
 
-local attributes = {
-  --header
-  net = true, -- test / beta / live net
-  net_version_max = true,
-  net_version_cur = true,
-  net_version_min = true,
-  type = true, --message type (string)
-  extensions = true, -- (0-255 int)
-  block_type = true, -- string
-  
-  --keepalive
-  peers = true, -- table, maxlen=8, {peer_address(string), peer_port(int)}  
-  
-  --etc
-}
-
 --instance metatable
 local Message_metatable = {
   __index = {
@@ -64,7 +48,7 @@ local Message_metatable = {
     send = function(self, peer)
       local ok, err = Server.send(self, peer)
       if ok then
-        return send
+        return self
       else
         return nil, err
       end
@@ -73,7 +57,7 @@ local Message_metatable = {
     broadcast = function(self, peers)
       local ok, err
       for _, peer in pairs(peers) do
-        ret, err = self:send(peer)
+        ok, err = self:send(peer)
         if not ok then return nil, err end
       end
       return self
@@ -85,14 +69,14 @@ local Message_metatable = {
 local Message = {}
 
 function Message.new(msgtype, data) -- (data) is also ok, as long as there's a data.type message type value
-  local shallow_copy_data = true
-  
   local new_msg_data
   if type(msgtype) == "table" then -- wrap around the passed-in data
-    shallow_copy_data = false
     data = msgtype
     msgtype = data.type
     new_msg_data = data
+  elseif data then
+    new_msg_data = data
+    new_msg_data.type = msgtype
   else
     new_msg_data = {
       type = msgtype

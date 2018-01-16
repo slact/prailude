@@ -4,16 +4,10 @@ local log = require "prailude.log"
 local server = require "prailude.server"
 local uv = require "luv"
 local gettime = require "prailude.util.lowlevel".gettime
+local coroutine = require "prailude.util.coroutine"
+local Parser = require "prailude.message.parser"
 
-local function in_coroutine()
-  --5.1/5.2 compatibility
-  local coro, main = coroutine.running()
-  if not main or not coro then
-    return nil
-  else
-    return coro
-  end
-end
+local Peer
 
 local function is_ok(err)
   if err then
@@ -51,32 +45,26 @@ local Peer_instance = {
     return ret, err
   end,
   
-  send_tcp = function(self, message, callback)
-    
-  end,
-  
   open_tcp = function(self, callback)
     if self.tcp then
       return error("tcp already open for peer " .. tostring(self))
     end
-    self.tcp_connection = uv.new_tcp()
+    self.tcp = uv.new_tcp()
+    local coro_wrap
     if not callback then
-      local coro = in_coroutine()
-      if coro then
-        callback = function(err)
-          if err then self:close_tcp() end
-          coroutine.resume(coro, is_ok(err), err)
-        end
-      end
-    else
-      local actual_callback = callback
-      callback = function(err)
-        if err then self:close_tcp() end
-        return actual_callback(is_ok(err), err)
-      end
+      coro_wrap = coroutine.late_wrap()
+      callback = coro_wrap
     end
-    assert(callback, "callback or coroutine required")
+    assert(callback, "no callback or coroutine given")
+    local actual_callback = callback
+    callback = function(err)
+      if err then self:close_tcp() end
+      return actual_callback(is_ok(err), err)
+    end
     uv.tcp_connect(self.tcp, self.address, self.port, callback)
+    if coro_wrap then
+      return coroutine.yield()
+    end
   end,
   
   send_tcp = function(self, message)
@@ -88,14 +76,12 @@ local Peer_instance = {
   
   read_frontiers = function(self, callback)
     assert(self.tcp, "expected an open tcp connection, instead there was an abyss of packets lost to time")
-    local coro
+    local coro_wrap
     if not callback then
-      coro = in_coroutine()
-      assert(coro, "no callback given, should have been in a coroutine")
-      callback = function(frontiers, err)
-        coroutine.resume(frontiers, err)
-      end
+      coro_wrap = coroutine.late_wrap()
+      callback = coro_wrap
     end
+    assert(callback, "no callback or coroutine given")
     
     local frontiers_so_far = {}
     local buf = {}
@@ -107,17 +93,13 @@ local Peer_instance = {
       end
       
       table.insert(buf, chunk)
-      local fresh_frontiers, leftover_buf_or_err, done = parser.parse_frontier(table.concat(buf))
+      local fresh_frontiers, leftover_buf_or_err, done = Parser.parse_frontier(table.concat(buf))
       
-      if not fresh_frontiers then
+      if not fresh_frontiers then -- there was an error
         self.tcp:read_stop()
         self:close_tcp()
         return callback(nil, leftover_buf_or_err)
-      elseif done then
-        -- no more frontiers here
-        self.tcp:read_stop()
-        return callback(frontiers)
-      else
+      elseif not done then
         --got some new frontiers
         for _, frontier in pairs(fresh_frontiers) do
           table.insert(frontiers_so_far, frontier)
@@ -125,9 +107,13 @@ local Peer_instance = {
         if leftover_buf_or_err and #leftover_buf_or_err > 0 then
           buf = {leftover_buf_or_err}
         end
+      else
+        -- no more frontiers here
+        self.tcp:read_stop()
+        return callback(frontiers_so_far)
       end
     end)
-    if coro then
+    if coro_wrap then
       return coroutine.yield()
     end
   end,
@@ -200,7 +186,7 @@ local function ensure_ipv6_if_ipv4(peer_addr)
   end
 end
 
-local Peer = {
+Peer = {
   new = new_peer,
   
   --find existing peer or make a new one
@@ -222,7 +208,6 @@ local Peer = {
       local select = ("SELECT * FROM peers WHERE address=\"%s\" AND port=%d LIMIT 1"):format(peer_addr, peer_port)
       for row in db:nrows(select) do
         peer = new_peer(row)
-        break
       end
     end
     if not peer then
@@ -253,8 +238,7 @@ local Peer = {
     return peers
   end,
   
-  
-  get_fastest_ping = function(self, n)
+  get_fastest_ping = function(n)
     n = n or 1
     local select = "SELECT *, (last_keepalive_received - last_keepalive_sent) AS ping FROM peers WHERE last_keepalive_received NOT NULL AND ping >= 0 ORDER BY ping ASC limit " .. n
     local peers = {}
