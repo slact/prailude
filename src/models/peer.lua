@@ -1,11 +1,12 @@
 local bus = require "prailude.bus"
 local mm = require "mm"
-local log = require "prailude.log"
+local logger = require "prailude.log"
 local server = require "prailude.server"
 local uv = require "luv"
 local gettime = require "prailude.util.lowlevel".gettime
 local coroutine = require "prailude.util.coroutine"
 local Parser = require "prailude.message.parser"
+local Timer = require "prailude.util.timer"
 
 local Peer
 
@@ -74,8 +75,10 @@ local Peer_instance = {
     return self.tcp:write(message:pack())
   end,
   
-  read_frontiers = function(self, callback)
+  read_frontiers = function(self, min_frontiers_per_sec, callback)
+    min_frontiers_per_sec = min_frontiers_per_sec or 100
     assert(self.tcp, "expected an open tcp connection, instead there was an abyss of packets lost to time")
+    
     local coro_wrap
     if not callback then
       coro_wrap = coroutine.late_wrap()
@@ -84,22 +87,38 @@ local Peer_instance = {
     assert(callback, "no callback or coroutine given")
     
     local frontiers_so_far = {}
+    
+    do --rate checking timer
+      local last_frontiers_count = 0
+      self.tcp_timer = Timer.interval(5000, function() --rate check
+        if true or #frontiers_so_far - last_frontiers_count < (min_frontiers_per_sec * 5) then
+          callback(nil, "frontier pull rate timeout")
+          return --timer stopped by callback()
+        else
+          last_frontiers_count = #frontiers_so_far
+        end
+      end)
+    end
+    
     local buf = {}
     self.tcp:read_start(function(err, chunk)
       if err then
+        logger:warning("tcp read error for peer %s: %s", self, err)
         self.tcp:read_stop()
         self:close_tcp()
         return callback(nil, err)
       end
       
       table.insert(buf, chunk)
-      local fresh_frontiers, leftover_buf_or_err, done = Parser.parse_frontier(table.concat(buf))
+      local fresh_frontiers, leftover_buf_or_err, done, progress = Parser.unpack_frontiers(table.concat(buf))
       
       if not fresh_frontiers then -- there was an error
+        logger:warning("error getting frontiers from peer %s: %s", self, leftover_buf_or_err)
         self.tcp:read_stop()
         self:close_tcp()
         return callback(nil, leftover_buf_or_err)
       elseif not done then
+        logger:debug("bootstrap: got %5d frontiers (%7d total) [%4.3f%%] from %s", #fresh_frontiers, #frontiers_so_far, (progress or 0) * 100, self)
         --got some new frontiers
         for _, frontier in pairs(fresh_frontiers) do
           table.insert(frontiers_so_far, frontier)
@@ -108,8 +127,11 @@ local Peer_instance = {
           buf = {leftover_buf_or_err}
         end
       else
+      logger:debug("finished getting frontiers (%7d total) from %s", #frontiers_so_far, self)
         -- no more frontiers here
         self.tcp:read_stop()
+        Timer.cancel(self.tcp_timer)
+        self.tcp_timer = nil
         return callback(frontiers_so_far)
       end
     end)
@@ -124,6 +146,10 @@ local Peer_instance = {
     end
     self.tcp:close()
     self.tcp = nil
+    if self.tcp_timer then
+      Timer.cancel(self.tcp_timer)
+      self.tcp_timer = nil
+    end
   end,
   
   update_timestamp = function(self, what)
@@ -229,7 +255,7 @@ Peer = {
   end,
   
   get_active_needing_keepalive = function()
-    local now = gettime()
+    local now = os.time()
     local select = ("SELECT * FROM peers WHERE last_keepalive_received > %i AND last_keepalive_received < %i ORDER BY RANDOM()"):format(now - Peer.inactivity_timeout, now - Peer.keepalive_interval)
     local peers = {}
     for row in db:nrows(select) do

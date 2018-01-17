@@ -117,7 +117,7 @@ function Rainet.initialize(db_ref)
 end
 
 function Rainet.bootstrap()
-  local fastpeers = Peer:get_fastest_ping(100)
+  local fastpeers = Peer.get_fastest_ping(100)
   local frontier_req = Message.new("frontier_req")
   
   local function frontier_fetcher()

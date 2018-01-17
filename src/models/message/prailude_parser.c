@@ -7,6 +7,7 @@
 #include <lua.h>
 #include <lauxlib.h>
 #include <stdbool.h>
+#include <limits.h>
 
 #include "prailude_parser.h"
 #include "util/prailude_util.h"
@@ -99,17 +100,18 @@ static void lua_rawsetfield_string(lua_State *L, int tindex, const char *field, 
   lua_rawset(L, tindex);
 }
 
-#define lua_rawsetfield_literal(Lua, tindex, field, str) \
+#define lua_rawsetfield_literal(Lua, absindex, field, str) \
   lua_pushliteral(Lua, field);     \
   lua_pushliteral(Lua, str);       \
-  lua_rawset(Lua, tindex)
+  lua_rawset(Lua, absindex)
 
-#define lua_rawsetfield_number(Lua, tindex, field, num) \
-  lua_pushliteral(Lua, field);     \
-  lua_pushnumber(Lua, num);        \
-  lua_rawset(Lua, tindex)
+static void lua_rawsetfield_number(lua_State *L, int tindex, const char *field, lua_Number num) {
+  tindex = lua_absindex(L, tindex);
+  lua_pushstring(L, field);
+  lua_pushnumber(L, num);
+  lua_rawset(L, tindex);
+}
 
-  
 static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err);
 static size_t block_pack_encode  (rai_block_type_t blocktype, lua_State *L, char *buf, size_t buflen);
   
@@ -423,6 +425,7 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       lua_rawsetfield_string(L, -1, "account", buf, 32); //start_account
       buf+=32;
       //num = ntohl(*(uint32_t *)buf); no network-ordering on the wire
+      lua_inspect_stack(L, "got FRONTIER_REQ");
       num = *(uint32_t *)buf;
       lua_rawsetfield_number(L, -1, "frontier_age", num);
       buf+=4;
@@ -546,7 +549,7 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
       lua_rawgetfield(L, -1, "frontier_age");
       if(lua_isnil(L, -1)) {
         //default is max age
-        
+        lua_pop(L, 1);
         strcpy(buf, "\xff\xff\xff\xff");
       }
       else {
@@ -560,6 +563,7 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
       lua_rawgetfield(L, -1, "frontier_count");
       if(lua_isnil(L, -1)) {
         //default is max count
+        lua_pop(L, 1);
         strcpy(buf, "\xff\xff\xff\xff");
       }
       else {
@@ -687,7 +691,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
 
 static int prailude_pack_message(lua_State *L) {
   rai_msg_header_t  header;
-  char              msg[256];
+  char              msg[512];
   char             *cur = msg;
   size_t            lastsz;
   const char       *err = NULL;
@@ -707,7 +711,7 @@ static int prailude_pack_message(lua_State *L) {
     return 2;
   }
   cur+= lastsz;
-  lastsz = message_body_pack_encode(L, &header, cur, 256-8, &err);
+  lastsz = message_body_pack_encode(L, &header, cur, 512-8, &err);
   if(lastsz == 0) {
     lua_pushnil(L);
     lua_pushstring(L, err ? err : "error packing and encoding message body");
@@ -775,6 +779,22 @@ static int prailude_unpack_message(lua_State *L) {
   }
 }
 
+static void bin_to_strhex(const unsigned char *bin, size_t bin_len, unsigned char *out) {
+  unsigned char     hex_str[]= "0123456789abcdef";
+  unsigned int      i;
+  for (i = 0; i < bin_len; i++) {
+    out[i * 2 + 0] = hex_str[(bin[i] >> 4) & 0x0F];
+    out[i * 2 + 1] = hex_str[(bin[i]     ) & 0x0F];
+  }
+  out[bin_len * 2] = 0;
+}
+
+static void print_chunk(const unsigned char *bin, size_t bin_len) {
+  char buf[512];
+  bin_to_strhex(bin, bin_len, buf);
+  printf("%s\n", buf);
+}
+
 static int prailude_unpack_frontiers(lua_State *L) {
   size_t      sz;
   const char *buf = luaL_checklstring(L, 1, &sz);
@@ -782,17 +802,19 @@ static int prailude_unpack_frontiers(lua_State *L) {
   const char *cur = buf;
   int         i = 0;
   int         done = 0;
+  const char *last_acct = NULL;
+  float       progress = 0;
   
-  const char *zero_acct = "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-                          "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-                          "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-                          "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+  const char *zero_frontier = "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+                              "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+                              "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+                              "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
   
   lua_newtable(L);
   
-  for(cur = buf; cur < end; cur += 128) {
-    
-    if(memcmp(cur, zero_acct, 64) == 0) {
+  for(cur = buf; cur + 64 <= end; cur += 64) {
+    //print_chunk(cur, 128);
+    if(memcmp(cur, zero_frontier, 64) == 0) {
       //last frontier
       done = 1;
       break;
@@ -801,14 +823,14 @@ static int prailude_unpack_frontiers(lua_State *L) {
     lua_createtable(L, 0, 2);
     
     lua_pushliteral(L, "account");
-    lua_pushlstring(L, cur, 64);
-    lua_rawset(L, -2);
+    lua_pushlstring(L, cur, 32);
+    last_acct = cur;
+    lua_rawset(L, -3);
     
     lua_pushliteral(L, "hash");
-    lua_pushlstring(L, &cur[64], 64);
-    lua_rawset(L, -2);
-    
-    lua_rawseti(L, -1, ++i);
+    lua_pushlstring(L, &cur[32], 32);
+    lua_rawset(L, -3);
+    lua_rawseti(L, -2, ++i);
   }
   
   //leftovers
@@ -816,13 +838,31 @@ static int prailude_unpack_frontiers(lua_State *L) {
     lua_pushnil(L);
   }
   else {
+    //printf("leftovers [%d]: ", end - cur);
+    //print_chunk(cur, end - cur);
     lua_pushlstring(L, cur, (end - cur));
   }
   
   //done?
   lua_pushboolean(L, done);
   
-  return 3;
+  //progress
+  if(last_acct) {
+    uint64_t topbytes = 0;
+    int i;
+    for(i=0; i<8; i++) {
+      topbytes <<= 8;
+      topbytes += (uint8_t )last_acct[0];
+    }
+    
+    progress = (double)topbytes / UINT64_MAX;
+    
+    lua_pushnumber(L, progress);
+    return 4;
+  }
+  else {
+    return 3;
+  }
 }
 
 
