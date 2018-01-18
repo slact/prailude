@@ -7,55 +7,7 @@ local verify_block_PoW_test = Util.work.verify_test
 local blake2b_hash = Util.blake2b.hash
 local mm = require "mm"
 
-local schema = [[
-  CREATE TABLE IF NOT EXISTS blocks (
-    hash                 TEXT,
-    raw                  TEXT,
-    
-    valid                INTEGER, --0: invalid
-                                  --1: PoW ok
-                                  --2: sig ok
-                                  --3: ledger check ok
-                                  --4: confirmed
-    
-    type                 TEXT,
-    prev_block           TEXT, --send, receive, change
-    source_block         TEXT, --open, receive
-    representative_acct  TEXT, --open, change
-    destination_acct     TEXT, --send
-    balance              TEXT,
-
-    PRIMARY KEY(hash)
-  ) WITHOUT ROWID;
-  CREATE INDEX IF NOT EXISTS block_valid_idx        ON blocks (valid);
-  CREATE INDEX IF NOT EXISTS block_type_idx         ON blocks (type);
-  CREATE INDEX IF NOT EXISTS block_prev_idx         ON blocks (prev_block);
-  CREATE INDEX IF NOT EXISTS block_source_idx       ON blocks (source_block);
-  CREATE INDEX IF NOT EXISTS block_rep_idx          ON blocks (representative_acct);
-  CREATE INDEX IF NOT EXISTS block_dst_idx          ON blocks (destination_acct);
-  CREATE INDEX IF NOT EXISTS block_balance_idx      ON blocks (balance);
-  
-  CREATE TABLE IF NOT EXISTS block_sources (
-    hash              TEXT,
-    peer              TEXT,
-    source_type       TEXT,
-    time              INTEGER
-  );
-  CREATE INDEX IF NOT EXISTS blocksource_peer_idx        ON block_sources (peer);
-  CREATE INDEX IF NOT EXISTS blocksource_type_idx        ON block_sources (source_type);
-  --CREATE INDEX IF NOT EXISTS blocksource_time_idx        ON block_sources (time);
-  
-  CREATE TABLE IF NOT EXISTS frontiers (
-    account           TEXT,
-    hash              TEXT,
-    PRIMARY KEY(account)
-  ) WITHOUT ROWID;
-  
-  CREATE INDEX IF NOT EXISTS frontiers_hash_idx        ON frontiers (hash);
-]]
-
-
-local db
+local NilDB = require "prailude.db.nil" -- no database
 
 local Block_instance = {
   hashable = function(self)
@@ -113,10 +65,6 @@ function Block.new(block_type, data)
   return setmetatable(data, block_meta)
 end
 
-function Block.find(hash)
-  --TODO
-end
-
 function Block.get(data)
   local block = Block.new(data)
   if not block:verify_PoW() then
@@ -128,10 +76,4 @@ function Block.get(data)
   end
 end
 
-function Block.initialize(db_ref)
-  db = db_ref
-  db:exec(schema)
-  print(db:errmsg())
-end
-
-return Block
+return setmetatable(Block, NilDB.block)

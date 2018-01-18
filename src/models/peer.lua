@@ -8,8 +8,9 @@ local coroutine = require "prailude.util.coroutine"
 local Parser = require "prailude.message.parser"
 local Timer = require "prailude.util.timer"
 
-local Peer
+local NilDB = require "prailude.db.nil" -- no database
 
+local Peer
 local function is_ok(err)
   if err then
     return nil
@@ -18,24 +19,9 @@ local function is_ok(err)
   end
 end
 
-local schema = [[
-  CREATE TABLE IF NOT EXISTS peers (
-    address                  TEXT,
-    port                     INTEGER,
-    last_received            REAL,
-    last_sent                REAL,
-    last_keepalive_sent      REAL,
-    last_keepalive_received  REAL,
-    PRIMARY KEY(address, port)
-  ) WITHOUT ROWID;
-  CREATE INDEX IF NOT EXISTS peer_last_received_idx           ON peers (last_received);
-  CREATE INDEX IF NOT EXISTS peer_last_sent_idx               ON peers (last_sent);
-  CREATE INDEX IF NOT EXISTS peer_last_keepalive_sent_idx     ON peers (last_keepalive_sent);
-  CREATE INDEX IF NOT EXISTS peer_last_keepalive_received_idx ON peers (last_keepalive_received);
-]]
+local coroutine_status, coroutine_resume, coroutine_running, coroutine_yield = coroutine.status, coroutine.resume, coroutine.running, coroutine.yield
 
 local known_peers = {}
-local db
 
 local Peer_instance = {
   send = function(self, message)
@@ -154,18 +140,9 @@ local Peer_instance = {
   
   update_timestamp = function(self, what)
     local field = "last_"..what
-    local current_val = self[field]
-    local now = gettime()
-    if not current_val or current_val < now - 60 then --every minute update
-      local query = ("UPDATE peers SET %s=%f WHERE address=\"%s\" AND port=%f"):format(
-        field,
-        now,
-        self.address,
-        self.port
-      )
-      db:exec(query)
-      self[field] = now
-    end
+    local prev_val = rawget(self, field)
+    rawset(self, field, gettime())
+    Peer.update_timestamp_field(self, field, prev_val)
     return self
   end
 }
@@ -231,57 +208,23 @@ Peer = {
     end
     local peer = rawget(known_peers, id)
     if not peer then
-      local select = ("SELECT * FROM peers WHERE address=\"%s\" AND port=%d LIMIT 1"):format(peer_addr, peer_port)
-      for row in db:nrows(select) do
-        peer = new_peer(row)
-      end
+      peer = Peer.find(peer_addr, peer_port)
     end
     if not peer then
       not_recently_seen = true
       peer = new_peer(peer_addr, peer_port)
-      db:exec(("INSERT OR IGNORE INTO peers (address, port) VALUES( \"%s\", %i)"):format(peer_addr, peer_port))
+      Peer.store(peer)
     end
     rawset(known_peers, id, peer)
     return peer, not_recently_seen
   end,
   
-  get8 = function(except_peer)
-    local select = ("SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - 120 AND address !=\"%s\" AND port != %d ORDER BY RANDOM() LIMIT 8"):format(except_peer.address, except_peer.port)
-    local peers = {}
-    for row in db:nrows(select) do
-      table.insert(peers, new_peer(row))
-    end
-    return peers
-  end,
-  
-  get_active_needing_keepalive = function()
-    local now = os.time()
-    local select = ("SELECT * FROM peers WHERE last_keepalive_received > %i AND last_keepalive_received < %i ORDER BY RANDOM()"):format(now - Peer.inactivity_timeout, now - Peer.keepalive_interval)
-    local peers = {}
-    for row in db:nrows(select) do
-      table.insert(peers, new_peer(row))
-    end
-    return peers
-  end,
-  
-  get_fastest_ping = function(n)
-    n = n or 1
-    local select = "SELECT *, (last_keepalive_received - last_keepalive_sent) AS ping FROM peers WHERE last_keepalive_received NOT NULL AND ping >= 0 ORDER BY ping ASC limit " .. n
-    local peers = {}
-    for row in db:nrows(select) do
-      table.insert(peers, new_peer(row))
-    end
-    return peers
-  end,
-  
-  initialize = function(db_ref)
-    db = db_ref
-    db:exec(schema)
-  end,
-  
   inactivity_timeout = 60*7,
   keepalive_interval = 60*2,
   
+  ------------
+  -- database stuff is in db/[db_type]/peerdb.lua
+  ------------
 }
 
-return Peer
+return setmetatable(Peer, NilDB.peer)

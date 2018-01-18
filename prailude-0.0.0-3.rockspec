@@ -77,6 +77,16 @@ build = {
     ["prailude.rainet"] =        "src/rainet.lua",
     ["prailude.log"] =           "src/log.lua",
     
+    --pluggable db interface
+    ["prailude.db"] =            "src/db.lua",
+    --nilDB, an erroring-out placeholder
+    ["prailude.db.nil"] =        "src/db/nil.lua",    
+    --sqlite
+    ["prailude.db.sqlite"] =        "src/db/sqlite.lua",
+    ["prailude.db.sqlite.peer"] =   "src/db/sqlite/peerdb.lua",
+    ["prailude.db.sqlite.block"] =  "src/db/sqlite/blockdb.lua",
+    ["prailude.db.sqlite.frontier"] ="src/db/sqlite/frontierdb.lua",
+    ["prailude.db.sqlite.kv"] =     "src/db/sqlite/kvdb.lua", --key/value store
     ["prailude.message.parser"] = {
       sources = {
         "src/models/message/prailude_parser.c",

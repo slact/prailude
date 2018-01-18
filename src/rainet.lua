@@ -5,12 +5,11 @@ local config = require "prailude.config"
 local Message = require "prailude.message"
 local Block = require "prailude.block"
 local Timer = require "prailude.util.timer"
+local DB = require "prailude.db"
 
 local uv = require "luv"
 
 local mm = require "mm"
-
-local db
 
 local Rainet = {}
 
@@ -106,12 +105,8 @@ local function handle_blocks()
   end)
 end
 
-function Rainet.initialize(db_ref)
+function Rainet.initialize()
   --local initial_peers = {}
-  
-  db = db_ref
-  Peer.initialize(db)
-  
   keepalive()
   handle_blocks()
 end
