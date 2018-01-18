@@ -2,3 +2,6 @@ release
 *.o
 *.so
 *.rock
+coredump/
+raiblocks.db
+vgcore.*
