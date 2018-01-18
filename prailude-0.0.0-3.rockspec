@@ -87,6 +87,8 @@ build = {
     ["prailude.db.sqlite.block"] =  "src/db/sqlite/blockdb.lua",
     ["prailude.db.sqlite.frontier"] ="src/db/sqlite/frontierdb.lua",
     ["prailude.db.sqlite.kv"] =     "src/db/sqlite/kvdb.lua", --key/value store
+    
+    ["prailude.message"] =  "src/models/message.lua",
     ["prailude.message.parser"] = {
       sources = {
         "src/models/message/prailude_parser.c",
@@ -94,11 +96,11 @@ build = {
       },
       incdirs = { "src" }
     },
-    ["prailude.message"] =  "src/models/message.lua",
-    ["prailude.peer"] =     "src/models/peer.lua",
-    ["prailude.block"] =    "src/models/block.lua",
-    ["prailude.transaction"]="src/models/transaction.lua",
-    ["prailude.account"] =   "src/models/account.lua",
+    ["prailude.peer"] =       "src/models/peer.lua",
+    ["prailude.block"] =      "src/models/block.lua",
+    ["prailude.transaction"]= "src/models/transaction.lua",
+    ["prailude.account"] =    "src/models/account.lua",
+    ["prailude.frontier"] =   "src/models/frontier.lua",
     
     prailude = "src/prailude.lua"
   },
