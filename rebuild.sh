@@ -62,4 +62,7 @@ done
 
 export CFLAGS="$CFLAGS -Wall -O$optimize_level -ggdb -fno-omit-frame-pointer -fPIC"
 
+pushd src
+luacheck ./ || exit 1
+popd
 sudo $luarocks CC="$CC" CFLAGS="$CFLAGS" make
