@@ -40,9 +40,13 @@ local Block_instance = {
     return verify_block_PoW_test(self:hashable(), self.work)
   end,
   verify_signature = function(self, account)
+    if self or account then
+      return true
+    end
     return true --not implemented yet
   end,
   verify_consistency = function(self)
+    if self then return true end
     return true -- not implemented yet
   end
 }
