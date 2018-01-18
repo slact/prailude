@@ -737,7 +737,7 @@ static int prailude_unpack_message(lua_State *L) {
   
   packed_msg = lua_tolstring(L, -1, &msg_sz);
   if(!packed_msg || msg_sz == 0) {
-    raise(SIGSTOP);
+    //raise(SIGSTOP);
     lua_pushnil(L);
     lua_pushliteral(L, "invalid packed message to unpack: empty or not a string");
     return 2;
@@ -778,7 +778,7 @@ static int prailude_unpack_message(lua_State *L) {
     return 1;
   }
 }
-
+/*
 static void bin_to_strhex(const unsigned char *bin, size_t bin_len, unsigned char *out) {
   unsigned char     hex_str[]= "0123456789abcdef";
   unsigned int      i;
@@ -794,6 +794,7 @@ static void print_chunk(const unsigned char *bin, size_t bin_len) {
   bin_to_strhex(bin, bin_len, buf);
   printf("%s\n", buf);
 }
+*/
 
 static int prailude_unpack_frontiers(lua_State *L) {
   size_t      sz;
