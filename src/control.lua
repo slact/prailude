@@ -17,15 +17,44 @@ function Control.initialize()
   Rainet.initialize()
 end
 
+--[[
+local loop_start_time
+function Control.poll_time() --time this loop iteration has been running
+  return os.time() - loop_start_time
+end
+function Control.be_nice_to_event_loop(func)
+  return function(...)
+    if Control.poll_time() > 0.100 then --10ms of cpu time spent in this loop interation
+      -- that's waay too much.
+      local arg = {...}
+      Timer.delay(10, function()
+        func(table.unpack(arg))
+      end)
+    else
+      func(...)
+    end
+  end
+end
+]]
+
 function Control.run()
   --do some other stuff maybe
   Timer.delay(0, function()
     bus.pub("run")
   end)
   
-  Timer.delay(10*1000, function()
+  Timer.delay(1000, function()
     Rainet.bootstrap()
   end)
+  
+  --[[
+  repeat
+    --time each loop iteration start
+    loop_start_time = os.time()
+  until uv.run("once") == false
+  uv.loop_close()
+  ]]
+  
   uv.run()
 end
 
