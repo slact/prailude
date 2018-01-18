@@ -1,23 +1,15 @@
 local bus = require "prailude.bus"
 local mm = require "mm"
-local logger = require "prailude.log"
+local log = require "prailude.log"
 local server = require "prailude.server"
 local uv = require "luv"
 local gettime = require "prailude.util.lowlevel".gettime
 local coroutine = require "prailude.util.coroutine"
-local Parser = require "prailude.message.parser"
 local Timer = require "prailude.util.timer"
 
 local NilDB = require "prailude.db.nil" -- no database
 
 local Peer
-local function is_ok(err)
-  if err then
-    return nil
-  else
-    return true
-  end
-end
 
 local coroutine_status, coroutine_resume, coroutine_running, coroutine_yield = coroutine.status, coroutine.resume, coroutine.running, coroutine.yield
 
@@ -32,110 +24,95 @@ local Peer_instance = {
     return ret, err
   end,
   
-  open_tcp = function(self, callback)
+  open_tcp = function(self, heartbeat_interval, heartbeat_callback)
+    local coro = coroutine_running()
+    assert(coro, "open_tcp expects to be called in a coroutine")
     if self.tcp then
-      return error("tcp already open for peer " .. tostring(self))
+      return error("tcp connection already open for peer " .. tostring(self))
     end
+    if #self.address==0 then
+      return nil, "invalid empty address"
+    end
+    
     self.tcp = uv.new_tcp()
-    local coro_wrap
-    if not callback then
-      coro_wrap = coroutine.late_wrap()
-      callback = coro_wrap
+    self.tcp_coroutine = coro
+    local function connect_callback(err)
+      if err then
+        return self:close_tcp(err)
+      end
+      local function read_start_callback(read_err, chunk)
+        if coroutine_status(coro) == "suspended" then
+          if chunk then assert(type(chunk) == "string") end
+          coroutine_resume(coro, chunk, read_err)
+        end
+      end
+      self.tcp:read_start(read_start_callback)
+      if coroutine_status(coro) == "suspended" then
+        return coroutine_resume(coro, self)
+      else
+        return self
+      end
     end
-    assert(callback, "no callback or coroutine given")
-    local actual_callback = callback
-    callback = function(err)
-      if err then self:close_tcp() end
-      return actual_callback(is_ok(err), err)
+    uv.tcp_connect(self.tcp, self.address, self.port, connect_callback)
+    
+    if type(heartbeat_interval) == "function" then
+      assert(heartbeat_callback == nil, "heartbeat callback and interval arguments are flipped")
+      --open_tcp called with heartbeat callback but no interval. i guess we'll allow it
+      heartbeat_callback, heartbeat_interval = heartbeat_interval, 1000
     end
-    uv.tcp_connect(self.tcp, self.address, self.port, callback)
-    if coro_wrap then
-      return coroutine.yield()
+    
+    if heartbeat_callback then
+      assert(heartbeat_interval, "heartbeat_interval required if heartbeat_callback given")
+      self.tcp_heartbeat_timer = Timer.interval(heartbeat_interval, function()
+        local ok, err = heartbeat_callback()
+        if ok == false or (not ok and err) then
+          self:close_tcp(err)
+        end
+      end)
     end
+    
+    return coroutine_yield()
   end,
   
   send_tcp = function(self, message)
     if not self.tcp then
       error("no open tcp connection for peer %s", tostring(self))
     end
-    return self.tcp:write(message:pack())
-  end,
-  
-  read_frontiers = function(self, min_frontiers_per_sec, callback)
-    min_frontiers_per_sec = min_frontiers_per_sec or 100
-    assert(self.tcp, "expected an open tcp connection, instead there was an abyss of packets lost to time")
-    
-    local coro_wrap
-    if not callback then
-      coro_wrap = coroutine.late_wrap()
-      callback = coro_wrap
-    end
-    assert(callback, "no callback or coroutine given")
-    
-    local frontiers_so_far = {}
-    
-    do --rate checking timer
-      local last_frontiers_count = 0
-      self.tcp_timer = Timer.interval(5000, function() --rate check
-        if true or #frontiers_so_far - last_frontiers_count < (min_frontiers_per_sec * 5) then
-          callback(nil, "frontier pull rate timeout")
-          return --timer stopped by callback()
-        else
-          last_frontiers_count = #frontiers_so_far
-        end
-      end)
-    end
-    
-    local buf = {}
-    self.tcp:read_start(function(err, chunk)
-      if err then
-        logger:warning("tcp read error for peer %s: %s", self, err)
-        self.tcp:read_stop()
-        self:close_tcp()
-        return callback(nil, err)
-      end
-      
-      table.insert(buf, chunk)
-      local fresh_frontiers, leftover_buf_or_err, done, progress = Parser.unpack_frontiers(table.concat(buf))
-      
-      if not fresh_frontiers then -- there was an error
-        logger:warning("error getting frontiers from peer %s: %s", self, leftover_buf_or_err)
-        self.tcp:read_stop()
-        self:close_tcp()
-        return callback(nil, leftover_buf_or_err)
-      elseif not done then
-        logger:debug("bootstrap: got %5d frontiers (%7d total) [%4.3f%%] from %s", #fresh_frontiers, #frontiers_so_far, (progress or 0) * 100, self)
-        --got some new frontiers
-        for _, frontier in pairs(fresh_frontiers) do
-          table.insert(frontiers_so_far, frontier)
-        end
-        if leftover_buf_or_err and #leftover_buf_or_err > 0 then
-          buf = {leftover_buf_or_err}
-        end
-      else
-      logger:debug("finished getting frontiers (%7d total) from %s", #frontiers_so_far, self)
-        -- no more frontiers here
-        self.tcp:read_stop()
-        Timer.cancel(self.tcp_timer)
-        self.tcp_timer = nil
-        return callback(frontiers_so_far)
-      end
-    end)
-    if coro_wrap then
-      return coroutine.yield()
+    if type(message) == "string" then --raw send
+      return self.tcp:write(message)
+    else
+      return self.tcp:write(message:pack())
     end
   end,
   
-  close_tcp = function(self)
+  close_tcp = function(self, errmsg)
+    
     if not self.tcp then
-      error("trying to close unopened TCP connection to " .. tostring(self))
+      -- nothing to do, tcp is already closed.
+      -- it's ok to do this multiple times, makes close callbacks easier to write
+      -- each one can idempotently call peer:close_tcp()
+      return self
     end
+    if self.tcp_heartbeat_timer then
+      Timer.cancel(self.tcp_heartbeat_timer)
+      self.tcp_heartbeat_timer = nil
+    end
+    local coro = self.tcp_coroutine
+    self.tcp_coroutine = nil
     self.tcp:close()
     self.tcp = nil
-    if self.tcp_timer then
-      Timer.cancel(self.tcp_timer)
-      self.tcp_timer = nil
+    if coro and coroutine_status(coro) == "suspended" then
+      coroutine_resume(coro, nil, errmsg)
     end
+  end,
+  
+  read_tcp = function(self)
+    local coro = coroutine_running()
+    assert(coro, "read_tcp expects to be called in a coroutine")
+    if coro ~= self.tcp_coroutine then
+      error("called read_tcp from a different coroutine than open_tcp. This should be ok but it's weird, so it's not ok.")
+    end
+    return coroutine_yield()
   end,
   
   update_timestamp = function(self, what)
