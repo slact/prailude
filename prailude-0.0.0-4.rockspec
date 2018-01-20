@@ -1,7 +1,7 @@
 #!/usr/bin/lua
 package = "prailude"
 local _version = "0.0.0"
-version = _version .. "-3"
+version = _version .. "-4"
 source = {
   url="git://github.com/slact/prailude"
   --tag="v".._version
@@ -85,7 +85,8 @@ build = {
     ["prailude.db.sqlite"] =        "src/db/sqlite.lua",
     ["prailude.db.sqlite.peer"] =   "src/db/sqlite/peerdb.lua",
     ["prailude.db.sqlite.block"] =  "src/db/sqlite/blockdb.lua",
-    ["prailude.db.sqlite.frontier"] ="src/db/sqlite/frontierdb.lua",
+    ["prailude.db.sqlite.frontier"]="src/db/sqlite/frontierdb.lua",
+    ["prailude.db.sqlite.account"] ="src/db/sqlite/accountdb.lua",
     ["prailude.db.sqlite.kv"] =     "src/db/sqlite/kvdb.lua", --key/value store
     
     ["prailude.message"] =  "src/models/message.lua",
@@ -97,6 +98,7 @@ build = {
       incdirs = { "src" }
     },
     ["prailude.peer"] =       "src/models/peer.lua",
+    ["prailude.TCPsession"] = "src/models/TCPSession.lua",
     ["prailude.block"] =      "src/models/block.lua",
     ["prailude.transaction"]= "src/models/transaction.lua",
     ["prailude.account"] =    "src/models/account.lua",
