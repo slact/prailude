@@ -556,9 +556,9 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
         num = lua_tonumber(L, -1);
         lua_pop(L, 1);
         //*(uint64_t *)buf=htonl(num); // no network-byte order on the wire
-        *(uint64_t *)buf=num;
+        *(uint32_t *)buf=num;
       }
-      buf+=8;
+      buf+=4;
       
       lua_rawgetfield(L, -1, "frontier_count");
       if(lua_isnil(L, -1)) {
@@ -570,9 +570,9 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
         num = lua_tonumber(L, -1);
         lua_pop(L, 1);
         //*(uint64_t *)buf=htonl(num); // no network-byte order on the wire
-        *(uint64_t *)buf=num;
+        *(uint32_t *)buf=num;
       }
-      buf+=8;
+      buf+=4;
       
       break;
   }
