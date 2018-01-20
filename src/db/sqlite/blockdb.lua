@@ -12,12 +12,15 @@ local schema = [[
                                   --3: ledger check ok
                                   --4: confirmed
     
+    n                    INTEGER, --block number in account (OPEN = 0)
     type                 TEXT,
     prev_block           TEXT, --send, receive, change
     source_block         TEXT, --open, receive
     representative_acct  TEXT, --open, change
     destination_acct     TEXT, --send
     balance              TEXT,
+    
+    
 
     PRIMARY KEY(hash)
   ) WITHOUT ROWID;

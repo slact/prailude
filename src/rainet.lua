@@ -2,11 +2,12 @@ local Peer = require "prailude.peer"
 local log = require "prailude.log"
 local bus = require "prailude.bus"
 local config = require "prailude.config"
-local Message = require "prailude.message"
-local Block = require "prailude.block"
 local Timer = require "prailude.util.timer"
 local DB = require "prailude.db"
 local Frontier = require "prailude.frontier"
+--local Account = require "prailude.account"
+local Message = require "prailude.message"
+local Block = require "prailude.block"
 
 local uv = require "luv"
 local mm = require "mm"
@@ -125,7 +126,6 @@ function Rainet.bootstrap()
       local prev_frontiers_count, intervals_checked, times_below_min_rate = 0, 0, 0
       local frontier_pull_size_estimated = false
       frontiers, err = Frontier.fetch(peer, function(frontiers_so_far, progress)
-        
         --interval-checker for frontier fetch progress
         local frontiers_per_sec = #frontiers_so_far - prev_frontiers_count
         prev_frontiers_count = #frontiers_so_far
