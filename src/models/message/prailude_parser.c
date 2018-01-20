@@ -778,7 +778,7 @@ static int prailude_unpack_message(lua_State *L) {
     return 1;
   }
 }
-/*
+
 static void bin_to_strhex(const unsigned char *bin, size_t bin_len, unsigned char *out) {
   unsigned char     hex_str[]= "0123456789abcdef";
   unsigned int      i;
@@ -789,12 +789,12 @@ static void bin_to_strhex(const unsigned char *bin, size_t bin_len, unsigned cha
   out[bin_len * 2] = 0;
 }
 
-static void print_chunk(const unsigned char *bin, size_t bin_len) {
-  char buf[512];
+void print_chunk(const unsigned char *bin, size_t bin_len) {
+  unsigned char buf[512];
   bin_to_strhex(bin, bin_len, buf);
   printf("%s\n", buf);
 }
-*/
+
 
 static int prailude_unpack_frontiers(lua_State *L) {
   size_t      sz;
@@ -814,7 +814,7 @@ static int prailude_unpack_frontiers(lua_State *L) {
   lua_newtable(L);
   
   for(cur = buf; cur + 64 <= end; cur += 64) {
-    //print_chunk(cur, 128);
+    //print_chunk(cur, 64);
     if(memcmp(cur, zero_frontier, 64) == 0) {
       //last frontier
       done = 1;
