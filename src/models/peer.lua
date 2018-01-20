@@ -2,16 +2,11 @@ local bus = require "prailude.bus"
 local mm = require "mm"
 local log = require "prailude.log"
 local server = require "prailude.server"
-local uv = require "luv"
 local gettime = require "prailude.util.lowlevel".gettime
-local coroutine = require "prailude.util.coroutine"
-local Timer = require "prailude.util.timer"
-
+local TCPSession = require "prailude.TCPsession"
 local NilDB = require "prailude.db.nil" -- no database
-
+local coroutine = require "prailude.util.coroutine"
 local Peer
-
-local coroutine_status, coroutine_resume, coroutine_running, coroutine_yield = coroutine.status, coroutine.resume, coroutine.running, coroutine.yield
 
 local known_peers = {}
 
@@ -24,95 +19,10 @@ local Peer_instance = {
     return ret, err
   end,
   
-  open_tcp = function(self, heartbeat_interval, heartbeat_callback)
-    local coro = coroutine_running()
-    assert(coro, "open_tcp expects to be called in a coroutine")
-    if self.tcp then
-      return error("tcp connection already open for peer " .. tostring(self))
-    end
-    if #self.address==0 then
-      return nil, "invalid empty address"
-    end
-    
-    self.tcp = uv.new_tcp()
-    self.tcp_coroutine = coro
-    local function connect_callback(err)
-      if err then
-        return self:close_tcp(err)
-      end
-      local function read_start_callback(read_err, chunk)
-        if coroutine_status(coro) == "suspended" then
-          if chunk then assert(type(chunk) == "string") end
-          coroutine_resume(coro, chunk, read_err)
-        end
-      end
-      self.tcp:read_start(read_start_callback)
-      if coroutine_status(coro) == "suspended" then
-        return coroutine_resume(coro, self)
-      else
-        return self
-      end
-    end
-    uv.tcp_connect(self.tcp, self.address, self.port, connect_callback)
-    
-    if type(heartbeat_interval) == "function" then
-      assert(heartbeat_callback == nil, "heartbeat callback and interval arguments are flipped")
-      --open_tcp called with heartbeat callback but no interval. i guess we'll allow it
-      heartbeat_callback, heartbeat_interval = heartbeat_interval, 1000
-    end
-    
-    if heartbeat_callback then
-      assert(heartbeat_interval, "heartbeat_interval required if heartbeat_callback given")
-      self.tcp_heartbeat_timer = Timer.interval(heartbeat_interval, function()
-        local ok, err = heartbeat_callback()
-        if ok == false or (not ok and err) then
-          self:close_tcp(err)
-        end
-      end)
-    end
-    
-    return coroutine_yield()
-  end,
-  
-  send_tcp = function(self, message)
-    if not self.tcp then
-      error("no open tcp connection for peer %s", tostring(self))
-    end
-    if type(message) == "string" then --raw send
-      return self.tcp:write(message)
-    else
-      return self.tcp:write(message:pack())
-    end
-  end,
-  
-  close_tcp = function(self, errmsg)
-    
-    if not self.tcp then
-      -- nothing to do, tcp is already closed.
-      -- it's ok to do this multiple times, makes close callbacks easier to write
-      -- each one can idempotently call peer:close_tcp()
-      return self
-    end
-    if self.tcp_heartbeat_timer then
-      Timer.cancel(self.tcp_heartbeat_timer)
-      self.tcp_heartbeat_timer = nil
-    end
-    local coro = self.tcp_coroutine
-    self.tcp_coroutine = nil
-    self.tcp:close()
-    self.tcp = nil
-    if coro and coroutine_status(coro) == "suspended" then
-      coroutine_resume(coro, nil, errmsg)
-    end
-  end,
-  
-  read_tcp = function(self)
-    local coro = coroutine_running()
-    assert(coro, "read_tcp expects to be called in a coroutine")
-    if coro ~= self.tcp_coroutine then
-      error("called read_tcp from a different coroutine than open_tcp. This should be ok but it's weird, so it's not ok.")
-    end
-    return coroutine_yield()
+  tcp_session = function(self, session_name, session, heartbeat)
+    local coro = coroutine.running()
+    assert(coro, "tcp_session expects to be called in a coroutine")
+    return TCPSession.get(self):run(session_name, session, heartbeat)
   end,
   
   update_timestamp = function(self, what)
