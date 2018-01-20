@@ -148,6 +148,11 @@ function Rainet.bootstrap()
         return true
       end)
       
+      if frontiers and #frontiers < 0.8 * largest_frontier_pull_size then
+        err = ("node seems desynchronized (small frontier %.0f , expected around %.0f)"):format(#frontiers, largest_frontier_pull_size)
+        frontiers = nil
+      end
+      
       if not frontiers then
         log:debug("bootstrap: failed to get frontiers from %s : %s", peer, err)
       else
@@ -155,6 +160,9 @@ function Rainet.bootstrap()
         if #frontiers > largest_frontier_pull_size then
           DB.kv.set("largest_frontier_pull", #frontiers)
         end
+        --we got a good one, now process that shit
+        print("we got one!!")
+        --return Account.bulk_pull(frontiers)
       end
     end
   end
