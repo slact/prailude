@@ -6,6 +6,7 @@ local Peer = require "prailude.peer"
 local Message = require "prailude.message"
 --local Parser = require "prailude.message.parser"
 local NilDB = require "prailude.db.nil" -- no database
+local util = require "prailude.util"
 
 local Account_meta = {
   __index = {
@@ -21,6 +22,14 @@ function Account.new(id, last_known_hash)
     last_known_hash = last_known_hash
   }
   return setmetatable(data, Account_meta)
+end
+
+function Account.to_bytes(str)
+  return util.pack_account(str)
+end
+
+function Account.to_readable(raw)
+  return util.unpack_account(raw)
 end
 
 --[[

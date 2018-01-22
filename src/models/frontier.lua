@@ -28,13 +28,13 @@ function Frontier.new(data, peer)
   return setmetatable((data or {}), Frontier_meta)
 end
   
-function Frontier.fetch(peer, heartbeat_callback)
+function Frontier.fetch(peer, watchdog_callback)
   assert(coroutine.running(), "Frontier.fetch must be called in a coroutine")
   local frontier_req = Message.new("frontier_req")
   
   local progress, frontiers_so_far = 0, {}
-  local function heartbeat_wrapper()
-    return heartbeat_callback(frontiers_so_far, progress)
+  local function watchdog_wrapper()
+    return watchdog_callback(frontiers_so_far, progress)
   end
   
   return peer:tcp_session("frontier pull", function(tcp)
@@ -62,7 +62,7 @@ function Frontier.fetch(peer, heartbeat_callback)
       end
       
     end
-  end, heartbeat_wrapper)
+  end, watchdog_wrapper)
 end
 
 ------------

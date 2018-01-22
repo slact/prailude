@@ -3,6 +3,7 @@ local cutil = require "prailude.util.lowlevel"
 local crypto = require "prailude.util.crypto"
 local timer = require "prailude.util.timer"
 local coroutine_util = require "prailude.util.coroutine"
+local parser = require "prailude.util.parser"
 
 local blake2b_init, blake2b_update, blake2b_final = crypto.blake2b_init, crypto.blake2b_update, crypto.blake2b_finalize
 local blake2b_hash = crypto.blake2b_hash
@@ -34,6 +35,8 @@ local util = {
     verify = crypto.dDSA_blake2b_verify
   },
 
+  parser = parser,
+  
   unpack_account = function(raw)
     return unpack_account_with_checksum(raw, blake2b_hash(raw, 5))
   end,
@@ -107,7 +110,10 @@ local util = {
     return balance
   end,
   
-  to_hex = cutil.to_hex,
+  bytes_to_hex = cutil.bytes_to_hex,
+  hex_to_bytes = function(hex)
+    return cutil.hex_to_bytes(hex:upper())
+  end,
   print_hex = cutil.print_hex,
   
   coroutine = coroutine_util

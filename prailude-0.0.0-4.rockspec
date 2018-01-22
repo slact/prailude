@@ -27,12 +27,12 @@ dependencies = {
 build = {
   type = "builtin",
   modules = {
-    ["prailude.util"] =          "src/util/prailude_util.lua",
+    ["prailude.util"] =          "src/util/util.lua",
     ["prailude.util.timer"] =    "src/util/timer.lua",
     ["prailude.util.coroutine"] ="src/util/coroutine.lua",
     ["prailude.util.lowlevel"] = {
       sources = {
-        "src/util/prailude_util.c",
+        "src/util/util.c",
         "src/util/uint256.c",
       },
       incdirs = { "src" }
@@ -55,7 +55,7 @@ build = {
         --ed25519-donna for a speed comparison
         "src/util/crypto/ed25519-donna/ed25519.c",
         
-        "src/util/prailude_crypto.c",
+        "src/util/crypto.c",
       },
       defines = {
         "ED25519_CUSTOMHASH",
@@ -68,6 +68,13 @@ build = {
         "src/util/crypto",
         "src"
       }
+    },
+    ["prailude.util.parser"] = {
+      sources = {
+        "src/util/parser.c",
+        "src/util/net.c"
+      },
+      incdirs = { "src" }
     },
     
     ["prailude.server"] =        "src/server.lua",
@@ -89,14 +96,7 @@ build = {
     ["prailude.db.sqlite.account"] ="src/db/sqlite/accountdb.lua",
     ["prailude.db.sqlite.kv"] =     "src/db/sqlite/kvdb.lua", --key/value store
     
-    ["prailude.message"] =  "src/models/message.lua",
-    ["prailude.message.parser"] = {
-      sources = {
-        "src/models/message/prailude_parser.c",
-        "src/util/net.c"
-      },
-      incdirs = { "src" }
-    },
+    ["prailude.message"] =    "src/models/message.lua",
     ["prailude.peer"] =       "src/models/peer.lua",
     ["prailude.TCPsession"] = "src/models/TCPSession.lua",
     ["prailude.block"] =      "src/models/block.lua",

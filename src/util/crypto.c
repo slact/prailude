@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <signal.h>
 #include <stdbool.h>
-#include "prailude_crypto.h"
+#include "crypto.h"
 
 //#include "monocypher.h"
 #include "argon2.h"
@@ -84,21 +84,30 @@ void ed25519_hash (uint8_t * out, uint8_t const * in, size_t inlen) {
 
 static int lua_blake2b_hash(lua_State *L) {
   uint8_t             digest[64];
-  
+  blake2b_state       state;
   size_t              len;
   const char         *str;
-  
-  int                 blake2b_hash_size;
-  if(lua_gettop(L) > 1) {
-    blake2b_hash_size = luaL_checknumber(L, 2);
+  int                 i, nargs = lua_gettop(L);
+  int                 blake2b_hash_size = 32;
+  int                 argtype;
+  if(nargs == 0) {
+    return luaL_error(L, "no arguments?... I disagree!!");
   }
-  else {
-    //default to 64-byte blake2b 
-    blake2b_hash_size = 64;
+  argtype = lua_type(L, nargs);
+  if(argtype == LUA_TNUMBER) {
+    blake2b_hash_size = luaL_checknumber(L, nargs);
+    nargs--;
+    if(blake2b_hash_size < 3 || blake2b_hash_size > 64) {
+      luaL_error(L, "invalid hash size %i", blake2b_hash_size);
+    }
   }
   
-  str = luaL_checklstring(L, 1, &len);
-  blake2b(digest, (size_t )blake2b_hash_size, str, len, NULL, 0);
+  blake2b_init(&state, blake2b_hash_size);
+  for(i=1; i<=nargs; i++) {
+    str = luaL_checklstring(L, i, &len);
+    blake2b_update(&state, str, len);
+  }
+  blake2b_final(&state, digest, blake2b_hash_size);
   
   lua_pushlstring(L, (const char*)digest, blake2b_hash_size);
   return 1;
@@ -113,7 +122,6 @@ static int raiblocks_work_verify(lua_State *L, uint64_t threshold) {
   size_t              len;
   const char         *work, *block_hashable;
   blake2b_state       state;
-  
   work = luaL_checklstring(L, 2, &len);
   if(len != 8) {
     return luaL_error(L, "wrong length work value");
@@ -285,7 +293,7 @@ static const struct luaL_Reg prailude_crypto_functions[] = {
   { "blake2b_init", lua_blake2b_init },
   { "blake2b_update", lua_blake2b_update },
   { "blake2b_finalize", lua_blake2b_finalize },
-  { "blake2b_hash", lua_blake2b_hash }, //(input_str, hash_bytes = 64)
+  { "blake2b_hash", lua_blake2b_hash }, //(input_str or table, hash_bytes = 32)
   
   { "raiblocks_verify_test_work", lua_raiblocks_work_verify_test },
   { "raiblocks_verify_work", lua_raiblocks_work_verify_full },

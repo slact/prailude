@@ -9,8 +9,8 @@
 #include <stdbool.h>
 #include <limits.h>
 
-#include "prailude_parser.h"
-#include "util/prailude_util.h"
+#include "parser.h"
+#include "util/util.h"
 #include "util/net.h"
 
 #include <netinet/in.h>
@@ -113,7 +113,7 @@ static void lua_rawsetfield_number(lua_State *L, int tindex, const char *field, 
 }
 
 static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err);
-static size_t block_pack_encode  (rai_block_type_t blocktype, lua_State *L, char *buf, size_t buflen);
+static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *buf, size_t buflen);
   
 static size_t lua_rawsetfield_string_scanbuf(lua_State *L, int tindex, const char *field, const char *buf, size_t buflen) {
   lua_rawsetfield_string(L, tindex, field, buf, buflen);
@@ -123,7 +123,7 @@ static size_t lua_rawsetfield_string_scanbuf(lua_State *L, int tindex, const cha
 static const char*lua_tblfield_to_fixedsize_string(lua_State *L, int tblindex, const char *fieldname, size_t expected_strlen) {
   const char    *str;
   size_t         len;
-  lua_rawgetfield(L, tblindex, fieldname);
+  lua_getfield(L, tblindex, fieldname);
   str = lua_tolstring(L, -1, &len);
   if(str == NULL) {
     luaL_error(L, "expected table field '%s' to be a string", fieldname);
@@ -595,7 +595,7 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
       buf += lua_table_field_fixedsize_string_encode(L, -1, "destination",  buf, 32); //destination account
       buf += lua_table_field_fixedsize_string_encode(L, -1, "balance",      buf, 16); //uint128_t encoding?
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",    buf, 64);
-      //TODO: generate work
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "work",         buf, 8);
       break;
     case RAI_BLOCK_RECEIVE:
       if(buflen < 136)
@@ -603,7 +603,7 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
       buf += lua_table_field_fixedsize_string_encode(L, -1, "previous",     buf, 32);
       buf += lua_table_field_fixedsize_string_encode(L, -1, "source",       buf, 32); //source block
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",    buf, 64);
-      //TODO: generate work
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "work",         buf, 8);
       break;
     case RAI_BLOCK_OPEN:
       if(buflen < 168)
@@ -612,7 +612,7 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
       buf += lua_table_field_fixedsize_string_encode(L, -1, "representative",buf, 32); //voting delegate
       buf += lua_table_field_fixedsize_string_encode(L, -1, "account",       buf, 32); //opening account (pubkey)
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",     buf, 64);
-      //TODO: generate work
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "work",          buf, 8);
       break;
     case RAI_BLOCK_CHANGE:
       if(buflen < 136) 
@@ -620,7 +620,7 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
       buf += lua_table_field_fixedsize_string_encode(L, -1, "previous",     buf, 32);
       buf += lua_table_field_fixedsize_string_encode(L, -1, "representative",buf, 32);
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",    buf, 64);
-      //TODO: generate work
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "work",         buf, 8);
       break;
   }
   return buf - buf_start;
@@ -871,18 +871,65 @@ static int prailude_pack_frontiers(lua_State *L) {
   return luaL_error(L, "Not yet implemented");
 }
 
+static int prailude_pack_block(lua_State *L) {
+  char               buf[512];
+  size_t             len;
+  rai_block_type_t   blocktype;
+#if LUA_VERSION_NUM > 501
+  luaL_checktype(L, 1, LUA_TTABLE);
+#else
+  lua_checktype(L, 1, LUA_TTABLE);
+#endif
+  lua_getfield(L, 1, "typecode");
+  lua_pushvalue(L, 1); 
+  lua_call(L, 1, 1); //block:typecode()
+  blocktype = lua_tonumber(L, -1);
+  lua_pop(L, 1);
+  
+  lua_inspect_stack(L, "encoding block");
+  
+  len = block_pack_encode(blocktype, L, buf, 512);
+  if(len == 0) {
+    luaL_error(L, "failed to encode block for some reason");
+  }
+  lua_pushlstring(L, buf, len);
+  return 1;
+}
+
+static int prailude_unpack_block(lua_State *L) {
+  const char          *raw;
+  size_t               sz;
+  size_t               bytes_read;
+  const char          *err = NULL;
+  rai_block_type_t     blocktype;
+  blocktype = luaL_checkinteger(L, 1);
+  if(blocktype < 2 || blocktype > 5) {
+    luaL_error(L, "invalid block type code %i", blocktype);
+  }
+  raw = luaL_checklstring(L, 2, &sz);
+  
+  bytes_read = block_decode_unpack(blocktype, L, raw, sz, &err);
+  if(bytes_read == 0) {
+    luaL_error(L, "Failed to unpack block: %s", err != NULL ? err : "incomplete block data");
+  }
+  return 1;
+}
+
 static const struct luaL_Reg prailude_parser_functions[] = {
   { "pack_message", prailude_pack_message },
   { "unpack_message", prailude_unpack_message },
   
+  { "pack_block", prailude_pack_block },
+  { "unpack_block", prailude_unpack_block },
+  
   { "unpack_frontiers", prailude_unpack_frontiers },
   { "pack_frontiers", prailude_pack_frontiers },
-  // { "parse_frontier_stream", prailude_parse_frontier_stream },
+  
   // { "parse_bulk_stream", prailude_parse_bulk_stream },
   { NULL, NULL }
 };
 
-int luaopen_prailude_message_parser(lua_State* lua) {
+int luaopen_prailude_util_parser(lua_State* lua) {
   lua_newtable(lua);
 #if LUA_VERSION_NUM > 501
   luaL_setfuncs(lua,prailude_parser_functions,0);

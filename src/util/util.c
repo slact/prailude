@@ -5,7 +5,7 @@
 #include <signal.h>
 #include <stdbool.h>
 
-#include "prailude_util.h"
+#include "util.h"
 #include "uint256.h"
 
 int raiutil_unpack_account_with_checksum(lua_State *L) {
@@ -161,17 +161,38 @@ static int raiutil_print_hex(lua_State *L) {
 }
 
 static int raiutil_to_hex(lua_State *L) {
-  char          out[512];
+  char          out[1024];
   const char   *in;
   size_t        sz;
   in = luaL_checklstring(L, 1, &sz);
-  if(sz > 255) {
-    RETURN_FAIL(L, "to_hex input may not exceed 256 bytes");
+  if(sz > 511) {
+    RETURN_FAIL(L, "to_hex input may not exceed 512 bytes");
   }
   bin_to_strhex((const unsigned char *)in, sz, (unsigned char *)out);
   lua_pushstring(L, out);
   return 1;
 }
+
+static int raiutil_from_hex(lua_State *L) {
+  char          out[512];
+  const char   *in;
+  size_t        len, i, j;
+  in = luaL_checklstring(L, 1, &len);
+  if(len > 1023) {
+    RETURN_FAIL(L, "from_hex input may not exceed 1024 bytes");
+  }
+  else if(len % 2 != 0) {
+    RETURN_FAIL(L, "from_hex input must have an even number of chars");
+  }
+  size_t final_len = len / 2;
+  for (i=0, j=0; j<final_len; i+=2, j++)
+    out[j] = (in[i] % 32 + 9) % 25 * 16 + (in[i+1] % 32 + 9) % 25;
+  out[final_len] = '\0';
+  
+  lua_pushlstring(L, out, final_len);
+  return 1;
+}
+
 
 
 // from luasocket
@@ -212,7 +233,8 @@ static const struct luaL_Reg prailude_util_functions[] = {
   { "pack_account_with_checksum", raiutil_pack_account_with_checksum },
   { "unpack_balance_raw", raiutil_unpack_balance_raw },
   { "pack_balance_raw", raiutil_pack_balance_raw },
-  { "to_hex", raiutil_to_hex },
+  { "bytes_to_hex", raiutil_to_hex },
+  { "hex_to_bytes", raiutil_from_hex },
   { "print_hex", raiutil_print_hex },
   
   { "gettime", raiutil_gettime },

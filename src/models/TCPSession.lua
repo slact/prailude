@@ -107,7 +107,7 @@ local TCPSession_meta = {
       end
     end)(),
     
-    run = function(self, name, session, heartbeat)
+    run = function(self, name, session, watchdog)
       if self.session then
         error("TCP session " .. self.name .. "already running")
       end
@@ -130,12 +130,12 @@ local TCPSession_meta = {
         Timer.cancel(self.idle_timer)
         self.idle_timer = nil
       end
-      if heartbeat then
-        assert(type(heartbeat) == "function", "heartbeat must be a function")
-        self.heartbeat_timer = Timer.interval(self.heartbeat_interval or 1000, function()
-          local heartbeat_ok, heartbeat_err = heartbeat()
-          if heartbeat_ok == false or (not heartbeat_ok and heartbeat_err) then
-            return self:stop(nil, heartbeat_err)
+      if watchdog then
+        assert(type(watchdog) == "function", "watchdog must be a function")
+        self.watchdog_timer = Timer.interval(self.watchdog_interval or 1000, function()
+          local watchdog_ok, watchdog_err = watchdog()
+          if watchdog_ok == false or (not watchdog_ok and watchdog_err) then
+            return self:stop(nil, watchdog_err)
           end
         end)
       end
@@ -147,7 +147,7 @@ local TCPSession_meta = {
       if not self.tcp:is_readable() or not self.tcp:is_writable() then --is not connected
         --let's connect
         self.tcp:connect(self.peer.address, self.peer.port, function(connect_err)
-          --this function could be called _after_ the heartbeat terminates the session. care must be taken
+          --this function could be called _after_ the watchdog terminates the session. care must be taken
           if connect_err then
             connect_err = ERR[connect_err]
           end
@@ -209,9 +209,9 @@ local TCPSession_meta = {
           end
         end
       end)
-      if self.heartbeat_timer then
-        Timer.cancel(self.heartbeat_timer)
-        self.heartbeat_timer = nil
+      if self.watchdog_timer then
+        Timer.cancel(self.watchdog_timer)
+        self.watchdog_timer = nil
       end
       if not ok then
         self.error = arg or "unspecified error"

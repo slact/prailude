@@ -126,7 +126,7 @@ function Rainet.bootstrap()
       local prev_frontiers_count, intervals_checked, times_below_min_rate = 0, 0, 0
       local frontier_pull_size_estimated = false
       frontiers, err = Frontier.fetch(peer, function(frontiers_so_far, progress)
-        --interval-checker for frontier fetch progress
+        --watchdog checker for frontier fetch progress
         local frontiers_per_sec = #frontiers_so_far - prev_frontiers_count
         prev_frontiers_count = #frontiers_so_far
         if frontiers_per_sec < min_frontiers_per_sec then
@@ -140,7 +140,7 @@ function Rainet.bootstrap()
           frontier_pull_size_estimated = true
           if #frontiers_so_far * 1/progress < 0.8 * largest_frontier_pull_size then
             --too small
-            return false, ("node seems desynchronized (small estimated frontier %.0f , expected around %.0f)"):format(#frontiers_so_far * 1/progress, largest_frontier_pull_size)
+            return false, ("node seems desynchronized (small estimated frontier %.0f, expected around %.0f)"):format(#frontiers_so_far * 1/progress, largest_frontier_pull_size)
           end
         end
         log:debug("bootstrap: got %5d frontiers (%7d total) [%4.3f%%] from %s", frontiers_per_sec, #frontiers_so_far, (progress or 0) * 100, peer)
