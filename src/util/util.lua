@@ -32,7 +32,7 @@ local util = {
   ed25519 = {
     get_public_key = crypto.edDSA_blake2b_get_public_key,
     sign = crypto.edDSA_blake2b_sign,
-    verify = crypto.dDSA_blake2b_verify
+    verify = crypto.edDSA_blake2b_verify
   },
 
   parser = parser,

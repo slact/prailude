@@ -5,6 +5,8 @@ local Util = require "prailude.util"
 local verify_block_PoW = Util.work.verify
 local verify_block_PoW_test = Util.work.verify_test
 local blake2b_hash = Util.blake2b.hash
+local verify_edDSA_blake2b_signature = Util.ed25519.verify
+
 local Account = require "prailude.account"
 local mm = require "mm"
 local Parser = require "prailude.util.parser"
@@ -54,6 +56,7 @@ local Block_instance = {
       return true
     end
   end,
+  
   PoW_hashable = function(self)
     local blocktype = self.type
     if blocktype == "open" then
@@ -72,11 +75,12 @@ local Block_instance = {
   verify_test_PoW = function(self)
     return verify_block_PoW_test(self:PoW_hashable(), self.work)
   end,
-  verify_signature = function(self, account)
-    if self or account then
-      return true
+  verify_signature = function(self)
+    if self.type == "open" then
+      return verify_edDSA_blake2b_signature(self.hash, self.signature, self.account)
+    else
+      error("not implemented yet")
     end
-    return true --not implemented yet
   end,
   verify_consistency = function(self)
     if self then return true end
@@ -147,7 +151,7 @@ if main_net then
   assert(Block.genesis:pack())
   print(Util.bytes_to_hex(Block.genesis.hash))
   assert(Block.genesis.hash == Util.hex_to_bytes("991CF190094C00F0B68E2E5F75F6BEE9"..
-                                                   "5A2E0BD93CEAA4A6734DB9F19B728948"),
+                                                 "5A2E0BD93CEAA4A6734DB9F19B728948"),
         "Genesis block hash doesn't match expected value")
 else
   Block.genesis = Block.new("open", {
