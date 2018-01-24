@@ -598,7 +598,7 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
       
       lua_getfield(L, -1, "balance");
       if(lua_type(L, -1) == LUA_TSTRING) {
-        buf += lua_table_field_fixedsize_string_encode(L, -1, "balance",      buf, 16); //uint128_t encoding?
+        buf += lua_table_field_fixedsize_string_encode(L, -1, "balance",    buf, 16); //uint128_t encoding?
       }
       else if(lua_type(L, -1) == LUA_TUSERDATA) {
         lua_getfield(L, -1, "pack");
@@ -607,8 +607,8 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
         str = luaL_checklstring(L, -1, &sz);
         assert(sz == 16);
         memcpy(buf, str, sz);
-        buf+=sz;
         lua_pop(L, 1);
+        buf += sz;
       }
       else {
         luaL_error(L, "missing 'balance' field for send block");
