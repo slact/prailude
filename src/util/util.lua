@@ -1,16 +1,15 @@
-local bc = require "bc"
 local cutil = require "prailude.util.lowlevel"
 local crypto = require "prailude.util.crypto"
 local timer = require "prailude.util.timer"
 local coroutine_util = require "prailude.util.coroutine"
 local parser = require "prailude.util.parser"
+local balance = require "prailude.util.balance"
 
 local blake2b_init, blake2b_update, blake2b_final = crypto.blake2b_init, crypto.blake2b_update, crypto.blake2b_finalize
 local blake2b_hash = crypto.blake2b_hash
 
 local unpack_account_with_checksum = cutil.unpack_account_with_checksum
 local pack_account_with_checksum = cutil.pack_account_with_checksum
-local unpack_balance_raw = cutil.unpack_balance_raw
 
 local util = {
   timer = timer,
@@ -87,36 +86,15 @@ local util = {
     return unpack_account_with_checksum(raw, blake2b_hash(raw, 5))
   end,
   
-  unpack_balance = function(raw, unit)
-    local prev_bc_scale = bc.digits(20)
-    if #raw ~= 16 then
-      return nil, "invalid balance"
-    end
-    local str_balance_raw, err = unpack_balance_raw(raw)
-    if not str_balance_raw then
-      return nil, err
-    end
-    local balance = bc.number(str_balance_raw)
-    if unit == 'xrb' then
-      balance = balance / (10^24)
-    elseif unit == 'kxrb' then
-      balance = balance / (10^27)
-    elseif unit == 'Mxrb' or unit == 'XRB' then
-      balance = balance / (10^30)
-    elseif unit then
-      return nil, "unknown unit " .. tostring(unit)
-    end
-    bc.digits(prev_bc_scale)
-    return balance
-  end,
-  
   bytes_to_hex = cutil.bytes_to_hex,
   hex_to_bytes = function(hex)
     return cutil.hex_to_bytes(hex:upper())
   end,
   print_hex = cutil.print_hex,
   
-  coroutine = coroutine_util
+  coroutine = coroutine_util,
+  
+  balance = balance
 }
 
 return util

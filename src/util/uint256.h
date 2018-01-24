@@ -64,4 +64,6 @@ bool tostring128(uint128_t *number, uint32_t base, char *out,
 bool tostring256(uint256_t *number, uint32_t base, char *out,
                  uint32_t outLength);
 bool torawstring256(uint256_t *number, char *out);
+bool torawstring128(uint128_t *number, char *out);
+bool fromstring128(uint128_t *number, const char *in, uint32_t len, const char **err);
 void reverseString(char *str, uint32_t length);

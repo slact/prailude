@@ -19,7 +19,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "uint256.h"
+#include <signal.h>
 
 static const char HEXDIGITS[] = "0123456789abcdef";
 
@@ -493,6 +495,70 @@ void reverseString(char *str, uint32_t length) {
     }
 }
 
+bool fromstring128(uint128_t *number, const char *in, uint32_t len, const char **err) {
+  char      raw[16];
+  uint32_t  base = 10;
+  
+  if(len > 2 && in[0]=='0' && in[1]=='x') {
+    base=16;
+    in+=2;
+    len-=2;
+  }
+  
+  if(base == 16) {
+    size_t        i, j;
+    size_t        outlen;
+    char         *cur;
+    if(len > 32 || len % 2 != 0) {
+      if(err) *err = "invalid length";
+      return false;
+    }
+    outlen = len / 2;
+    cur = &raw[16-outlen];
+    if(outlen < 16) {
+      memset(raw, 0, 16 - outlen);
+    }
+    for (i=0, j=0; j<outlen; i+=2, j++) {
+      cur[j] = (in[i] % 32 + 9) % 25 * 16 + (in[i+1] % 32 + 9) % 25;
+    }
+    readu128BE((void *)raw, number);
+    return true;
+  }
+  else if(base == 10) {
+    int       i;
+    uint128_t digit, ten;
+    readu128BE((uint8_t *)"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\xA", &ten);
+    char      rawdigit[16];
+    memset(rawdigit, 0, 16);
+    
+    if(memchr(in, '.', len)) {
+      if(err) *err = "no decimal points allowed. unsigned ints only.";
+      return false;
+    }
+    if(len > 0 && in[0] == '-') {
+      if(err) *err = "no negative signs allowed. unsigned ints only.";
+      return false;
+    }
+    clear128(number);
+    for(i = 0; i < len; i++) {
+      mul128(number, &ten, number);
+      if(in[i] < '0' || in[i] > '9') {
+        clear128(number);
+        if(err) *err = "invalid character in number";
+        return false;
+      }
+      rawdigit[15]=in[i]-'0';
+      readu128BE((uint8_t *)&rawdigit, &digit);
+      add128(number, &digit, number);
+    }
+    return true;
+  }
+  else {
+    if(err) *err = "weird base";
+    return false;
+  }
+}
+
 bool tostring128(uint128_t *number, uint32_t baseParam, char *out,
                  uint32_t outLength) {
     uint128_t rDiv;
@@ -551,5 +617,13 @@ bool torawstring256(uint256_t *number, char *out) {
   reverseString((char *)&UPPER(LOWER_P(nout)), 8);
   reverseString((char *)&LOWER(UPPER_P(nout)), 8);
   reverseString((char *)&LOWER(LOWER_P(nout)), 8);
+  return true;
+}
+
+bool torawstring128(uint128_t *number, char *out) {
+  uint128_t *nout = (uint128_t *)out;
+  copy128(nout, number);
+  reverseString((char *)&UPPER_P(nout), 8);
+  reverseString((char *)&LOWER_P(nout), 8);
   return true;
 }

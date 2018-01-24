@@ -582,6 +582,8 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
 static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *buf, size_t buflen) {
   //expects the block table to be at top of the stack
   char          *buf_start = buf;
+  const char    *str;
+  size_t         sz;
   
   switch(blocktype) {
     case RAI_BLOCK_INVALID:
@@ -593,7 +595,26 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
         luaL_error(L, "buflen too small to encode 'send' block");
       buf += lua_table_field_fixedsize_string_encode(L, -1, "previous",     buf, 32);
       buf += lua_table_field_fixedsize_string_encode(L, -1, "destination",  buf, 32); //destination account
-      buf += lua_table_field_fixedsize_string_encode(L, -1, "balance",      buf, 16); //uint128_t encoding?
+      
+      lua_getfield(L, -1, "balance");
+      if(lua_type(L, -1) == LUA_TSTRING) {
+        buf += lua_table_field_fixedsize_string_encode(L, -1, "balance",      buf, 16); //uint128_t encoding?
+      }
+      else if(lua_type(L, -1) == LUA_TUSERDATA) {
+        lua_getfield(L, -1, "pack");
+        lua_pushvalue(L, -2); //self
+        lua_call(L, 1, 1);
+        str = luaL_checklstring(L, -1, &sz);
+        assert(sz == 16);
+        memcpy(buf, str, sz);
+        buf+=sz;
+        lua_pop(L, 1);
+      }
+      else {
+        luaL_error(L, "missing 'balance' field for send block");
+      }
+      lua_pop(L, 1);
+      
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",    buf, 64);
       buf += lua_table_field_fixedsize_string_encode(L, -1, "work",         buf, 8);
       break;

@@ -1,7 +1,7 @@
 --eh...
 
 local Util = require "prailude.util"
-
+local Balance = require "prailude.util.balance"
 local verify_block_PoW = Util.work.verify
 local verify_block_PoW_test = Util.work.verify_test
 local blake2b_hash = Util.blake2b.hash
@@ -31,7 +31,7 @@ local Block_instance = {
     elseif btype == "receive" then
       hash, err = blake2b_hash(self.previous, self.source)
     elseif btype == "send" then
-      hash, err = blake2b_hash(self.previous, self.destination, self.balance)
+      hash, err = blake2b_hash(self.previous, self.destination, self.balance:pack())
     else
       error("unknown block type " .. tostring(btype))
     end
@@ -110,6 +110,9 @@ function Block.new(block_type, data)
   else
     assert(type(block_type) == "string")
     data = {type = block_type}
+  end
+  if data.balance then
+    data.balance = Balance.unpack(data.balance)
   end
   if not block_typecode[data.type] then
     error("invalid block type " .. tostring(data.type))

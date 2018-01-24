@@ -37,7 +37,12 @@ build = {
       },
       incdirs = { "src" }
     },
-    ["prailude.util.crypto"] =   {
+    ["prailude.util.balance"] = "src/util/balance.lua",
+    ["prailude.util.balance.lowlevel"] = {
+      sources = { "src/util/balance.c", "src/util/uint256.c" },
+      incdirs = { "src" }
+    },
+    ["prailude.util.crypto"] = {
       sources = {
         --blake2b
         "src/util/crypto/blake2/blake2b.c",
