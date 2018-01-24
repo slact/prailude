@@ -663,7 +663,6 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "balance",      buf, 16); //uint128_t encoding?
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
-      //TODO: generate work
       break;
     case RAI_BLOCK_RECEIVE:
       if(buflen < 136) {
@@ -674,7 +673,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "previous",     buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "source",       buf, 32); //source block
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
-      buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
+      buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8);
       break;
     case RAI_BLOCK_OPEN:
       if(buflen < 168) {
@@ -686,7 +685,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "representative",buf, 32); //voting delegate
       buf += lua_rawsetfield_string_scanbuf(L, -1, "account",      buf, 32); //own acct (pubkey)
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
-      buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
+      buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8);
       break;
     case RAI_BLOCK_CHANGE:
       if(buflen < 136) {
@@ -697,7 +696,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "previous",     buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "representative",buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
-      buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
+      buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8);
       break;
     case RAI_BLOCK_INVALID:
       *err = "tried to unpack 'invalid' type block";

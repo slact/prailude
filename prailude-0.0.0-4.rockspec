@@ -54,10 +54,7 @@ build = {
         "src/util/crypto/argon2/src/ref.c",  
         "src/util/crypto/argon2/src/thread.c",  
         
-        --monocypher for blake2b and edDSA-blake2b
-        --"src/util/crypto/monocypher.c",
-        
-        --ed25519-donna for a speed comparison
+        --ed25519-donna
         "src/util/crypto/ed25519-donna/ed25519.c",
         
         "src/util/crypto.c",
