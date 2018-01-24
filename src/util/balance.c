@@ -16,7 +16,7 @@ typedef uint8_t prailude_balance_unit_t;
 static prailude_balance_unit_t balance_default_unit = BALANCE_MXRB;
 
 typedef struct {
-  uint128_t               raw;
+  uint256_t               raw; //using 256-bit to detect over/underflow
   prailude_balance_unit_t unit;
   unsigned                lock:1;
 } prailude_balance_t;
@@ -84,7 +84,7 @@ static int lua_balance_unpack(lua_State *L) {
     luaL_error(L, "packed balance string must be 16 bytes long, but was %u", sz);
   }
   balance = balance_create(L);
-  readu128BE((uint8_t *)packed, &balance->raw);
+  readu128BE((uint8_t *)packed, &balance->raw.elements[1]);
   balance->unit = balance_default_unit;
   return 1;
 }
@@ -100,26 +100,26 @@ static int lua_balance_new(lua_State *L) {
   prailude_balance_t  *balance = balance_create(L);
   if(nargs == 0) {
     //initialize to 0
-    clear128(&balance->raw);
+    clear256(&balance->raw);
     return 1;
   }
   
   argtype = lua_type(L, 1);
   switch(argtype) {
-    case LUA_TNIL:
-      clear128(&balance->raw);
-      break;
     case LUA_TSTRING:
       in = luaL_checklstring(L, 1, &len);
-      ok = fromstring128(&balance->raw, in, len, &err);
+      clear128(&balance->raw.elements[0]);
+      ok = fromstring128(&balance->raw.elements[1], in, len, &err);
       if(!ok) {
         return luaL_error(L, err);
       }
       break;
     case LUA_TUSERDATA:
       balance_in = luaL_checkudata(L, 1, "prailude.balance");
-      copy128(&balance->raw, &balance_in->raw);
+      clear128(&balance->raw.elements[0]);
+      copy128(&balance->raw.elements[1], &balance_in->raw.elements[1]);
       balance->unit = balance_in->unit;
+      break;
     default:
       luaL_error(L, "can only parse strings");
       break;
@@ -153,7 +153,11 @@ static int lua_balance_add(lua_State *L) {
   if(self->lock) {
     return luaL_error(L, "cannot modify locked balance by adding");
   }
-  add128(&self->raw, &other->raw, &self->raw);
+  add256(&self->raw, &other->raw, &self->raw);
+  if(!zero128(&self->raw.elements[0])) { //overflowd!
+    minus256(&self->raw, &other->raw, &self->raw); //undo
+    return luaL_error(L, "balance addition results in overflow");
+  }
   lua_pushvalue(L, 1);
   return 1;
 }
@@ -163,7 +167,11 @@ static int lua_balance_subtract(lua_State *L) {
   if(self->lock) {
     return luaL_error(L, "cannot modify locked balance by subtracting");
   }
-  minus128(&self->raw, &other->raw, &self->raw);
+  minus256(&self->raw, &other->raw, &self->raw);
+  if(!zero128(&self->raw.elements[0])) { //undeflowd?
+    add256(&self->raw, &other->raw, &self->raw); //undo
+    return luaL_error(L, "balance subtraction results in overflow");
+  }
   lua_pushvalue(L, 1);
   return 1;
 }
@@ -171,7 +179,7 @@ static int lua_balance_subtract(lua_State *L) {
 static int lua_balance_pack(lua_State *L) {
   char out[16];
   prailude_balance_t *self = luaL_checkudata(L, 1, "prailude.balance");
-  torawstring128(&self->raw, out);
+  torawstring128(&self->raw.elements[1], out);
   lua_pushlstring(L, out, 16);
   return 1;
 }
@@ -185,7 +193,7 @@ static int lua_balance_lock(lua_State *L) {
 static int lua_balance_tostring(lua_State *L) {
   char                out[40];
   prailude_balance_t *self = luaL_checkudata(L, 1, "prailude.balance");
-  tostring128(&self->raw, 10, out, 40);
+  tostring128(&self->raw.elements[1], 10, out, 40);
   lua_pushstring(L, out);
   return 1;
 }
@@ -204,24 +212,27 @@ static int lua_balance_unit(lua_State *L) {
   return 1;
 }
 
-static int balance_operator_3(lua_State *L, void op(uint128_t *, uint128_t *, uint128_t *)) {
+static int balance_operator_3(lua_State *L, void op(uint256_t *, uint256_t *, uint256_t *), int check, const char *overflow_err) {
   prailude_balance_t *self = luaL_checkudata(L, 1, "prailude.balance");
   prailude_balance_t *other = luaL_checkudata(L, 2, "prailude.balance");
   prailude_balance_t *result = balance_create(L);
   result->unit = self->unit;
   op(&self->raw, &other->raw, &result->raw);
+  if(check != 0 && !zero128(&result->raw.elements[0])) {
+    return luaL_error(L, "balance %s", overflow_err);
+  }
   return 1;
 }
 
 
 static int lua_balance_add_new(lua_State *L) {
-  return balance_operator_3(L, add128);
+  return balance_operator_3(L, add256, 1, "overflow from addition");
 }
 static int lua_balance_subtract_new(lua_State *L) {
-  return balance_operator_3(L, minus128);
+  return balance_operator_3(L, minus256, 1, "underflow from subtraction");
 }
 static int lua_balance_multiply_new(lua_State *L) {
-  return balance_operator_3(L, mul128);
+  return balance_operator_3(L, mul256, 1, "overflow from multiplication");
 }
 static int lua_balance_divide_new(lua_State *L) {
   prailude_balance_t *self = luaL_checkudata(L, 1, "prailude.balance");
@@ -229,7 +240,7 @@ static int lua_balance_divide_new(lua_State *L) {
   prailude_balance_t *result = balance_create(L);
   uint128_t           mod;
   result->unit = self->unit;
-  divmod128(&self->raw, &other->raw, &result->raw, &mod);
+  divmod128(&self->raw.elements[1], &other->raw.elements[1], &result->raw.elements[1], &mod);
   return 1;
 }
 static int lua_balance_modulo_new(lua_State *L) {
@@ -238,26 +249,26 @@ static int lua_balance_modulo_new(lua_State *L) {
   prailude_balance_t *result = balance_create(L);
   uint128_t           div;
   result->unit = self->unit;
-  divmod128(&self->raw, &other->raw, &div, &result->raw);
+  divmod128(&self->raw.elements[1], &other->raw.elements[1], &div, &result->raw.elements[1]);
   return 1;
 }
   
 static int lua_balance_equal(lua_State *L) {
   prailude_balance_t *self = luaL_checkudata(L, 1, "prailude.balance");
   prailude_balance_t *other = luaL_checkudata(L, 2, "prailude.balance");
-  lua_pushboolean(L, equal128(&self->raw, &other->raw));
+  lua_pushboolean(L, equal128(&self->raw.elements[1], &other->raw.elements[1]));
   return 1;
 }
 static int lua_balance_lessthan(lua_State *L) {
   prailude_balance_t *self = luaL_checkudata(L, 1, "prailude.balance");
   prailude_balance_t *other = luaL_checkudata(L, 2, "prailude.balance");
-  lua_pushboolean(L, !gte128(&self->raw, &other->raw));
+  lua_pushboolean(L, !gte128(&self->raw.elements[1], &other->raw.elements[1]));
   return 1;
 }
 static int lua_balance_lessthan_or_equal(lua_State *L) {
   prailude_balance_t *self = luaL_checkudata(L, 1, "prailude.balance");
   prailude_balance_t *other = luaL_checkudata(L, 2, "prailude.balance");
-  lua_pushboolean(L, !gt128(&self->raw, &other->raw));
+  lua_pushboolean(L, !gt128(&self->raw.elements[1], &other->raw.elements[1]));
   return 1;
 }
 

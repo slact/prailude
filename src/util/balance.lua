@@ -45,9 +45,8 @@ end
 local new = Balance.new
 Balance.new = function(num, unit)
   local self, err
-  if is_balance(num) then
-    self = num:copy()
-  elseif type(num)=="string" and num:match("^0x") then
+  num = num or "0"
+  if is_balance(num) or type(num)=="string" and num:match("^0x") then
     --hex
     self = new(num)
   else
