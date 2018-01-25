@@ -4,7 +4,7 @@ local log = require "prailude.log"
 local coroutine = require "prailude.util.coroutine"
 local Peer = require "prailude.peer"
 local Message = require "prailude.message"
-local Parser = require "prailude.message.parser"
+local Parser = require "prailude.util.parser"
 local NilDB = require "prailude.db.nil" -- no database
 
 local Frontier_meta = {
