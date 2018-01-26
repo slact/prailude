@@ -66,10 +66,6 @@ local Block_instance = {
     end
   end,
   verify_PoW = function(self)
-    mm(self)
-    mm(self:PoW_hashable())
-    mm(self.work)
-    
     return verify_block_PoW(self:PoW_hashable(), self.work)
   end,
   verify_test_PoW = function(self)
@@ -152,7 +148,6 @@ if main_net then
                                        "8E46DBA03E523A7B5A19E4B6EB12BB02")
   })
   assert(Block.genesis:pack())
-  print(Util.bytes_to_hex(Block.genesis.hash))
   assert(Block.genesis.hash == Util.hex_to_bytes("991CF190094C00F0B68E2E5F75F6BEE9"..
                                                  "5A2E0BD93CEAA4A6734DB9F19B728948"),
         "Genesis block hash doesn't match expected value")
