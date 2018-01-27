@@ -906,8 +906,6 @@ static int prailude_pack_block(lua_State *L) {
   blocktype = lua_tonumber(L, -1);
   lua_pop(L, 1);
   
-  lua_inspect_stack(L, "encoding block");
-  
   len = block_pack_encode(blocktype, L, buf, 512);
   if(len == 0) {
     luaL_error(L, "failed to encode block for some reason");
