@@ -76,10 +76,11 @@ local workpool_defaults = {__index = {
   max_workers = 4,
   retry = 0,
   
-  
+  inspect_inverval = 1000
 }}
 
 local Workpool = function(opt)
+  local Timer = require "prailude.util.timer"
   local parent_coro = running()
   assert(parent_coro, "workpool must be called from a coroutine")
   local work = {
@@ -204,7 +205,18 @@ local Workpool = function(opt)
     end
   end)
   company()
+  
+  local inspector
+  if opt.inspect then
+    inspector = Timer.interval(opt.inspect_inverval, function()
+      opt.inspect(active_workers, work.todo, work.done, work.fail, work.fail_reason)
+    end)
+  end
+  
   foreman:wait()
+  if inspector then
+    inspector:stop()
+  end
   return work.done, work.fail, work.fail_reason
 end
 
