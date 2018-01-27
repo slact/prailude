@@ -40,4 +40,175 @@ function coroutine_util.late_wrap()
   end
 end
 
+local Condition = function(name, check)
+  if type(name) == "function" and not check then
+    name, check = "", name
+  end
+  local waiting = {}
+  return setmetatable({
+    wait = function()
+      if not check() then
+        local coro = running()
+        table.insert(waiting, coro)
+        return coroutine.yield()
+      end
+    end,
+    check = function()
+      local waiting_num = #waiting
+      if waiting_num > 0 and check() then
+        local now_waiting = waiting
+        waiting = {}
+        for _, coro in ipairs(now_waiting) do
+          resume(coro)
+        end
+        return waiting_num
+      end
+      return 0
+    end,
+  }, {__tostring = function()
+    return ("condition %s [%s] (waiting: %i)"):format(name, check() and "true" or "false", #waiting)
+  end})
+end
+
+
+
+local workpool_defaults = {__index = {
+  max_workers = 4,
+  retry = 0,
+  
+  
+}}
+
+local Workpool = function(opt)
+  local parent_coro = running()
+  assert(parent_coro, "workpool must be called from a coroutine")
+  local work = {
+    todo = {},
+    done = {},
+    fail = {},
+    fail_reason = {}
+  }
+  opt = setmetatable(opt or {}, workpool_defaults)
+  assert(type(opt.worker) == "function")
+  
+  
+  
+  local nextjob, havejob --jobs iterator
+  local retryjob
+  
+  if type(opt.retry) == "number" then
+    local fails = {}
+    retryjob = function(job)
+      local failcount = rawget(fails, job) or 0
+      failcount = failcount + 1
+      rawset(fails, job, failcount)
+      return failcount < opt.retry
+    end
+  elseif type(opt.retry) == "function" then
+    retryjob = opt.retry
+  else
+    error("retry option must be nil, a number or afunction, was instead " .. type(opt.retry))
+  end
+  
+  local active_workers = 0
+  
+  local moreworkers
+  if type(opt.grow) == "function" then
+    moreworkers = opt.grow
+  elseif not opt.grow then
+    moreworkers = function()
+      return active_workers <= opt.max_workers
+    end
+  else
+    error("'grow' option must be a function")
+  end
+  
+  if type(opt.work) == "table" then
+    work.todo = opt.work
+    nextjob = function()
+      return function()
+        return table.remove(work.todo)
+      end
+    end
+    havejob = function()
+      return #work.todo > 0
+    end
+  elseif type(opt.work) == "function" then
+    work.todo = {}
+    nextjob = function()
+      return function()
+        local job = table.remove(work.todo)
+        if job == nil then
+          job = opt.work()
+        end
+        return job
+      end
+    end
+    havejob = function()
+      if #work.todo > 0 then
+        return true
+      else
+        local job = opt.work()
+        if job ~= nil then
+          table.insert(work.todo, job)
+        end
+        return #work.todo > 0
+      end
+    end
+  else
+    error("work generators and other fancy stuff aren't supported yet")
+  end
+  
+  local shiftmanager = Condition("shiftmanager", function()
+    if havejob() and not moreworkers(active_workers) then
+      return false
+    elseif not havejob() and active_workers > 0 then
+      return false
+    else
+      return true
+    end
+  end)
+  
+  local foreman = Condition("foreman", function()
+    if not havejob() and active_workers == 0 then
+      return true
+    end
+  end)
+  
+  local worker = function(job)
+    active_workers = active_workers + 1
+    local ok, res, err = pcall(opt.worker, job)
+    if not ok then
+      res, err = nil, res
+    end
+    if res == nil then
+      if retryjob(job) then
+        table.insert(work.todo, job)
+      else
+        table.insert(work.fail, job)
+        table.insert(work.fail_reason, err or "?")
+      end
+    else
+      table.insert(work.done, res)
+    end
+    active_workers = active_workers - 1
+    shiftmanager:check()
+    foreman:check()
+  end
+  
+  local company = coroutine.wrap(function()
+    for job in nextjob() do
+      --print("run the worker ", workwrap ,"for job " ..current_job)
+      coroutine.wrap(worker)(job)
+      shiftmanager:wait()
+    end
+  end)
+  company()
+  foreman:wait()
+  return work.done, work.fail, work.fail_reason
+end
+
+coroutine_util.workpool = Workpool
+coroutine_util.condition = Condition
+
 return coroutine_util
