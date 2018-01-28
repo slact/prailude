@@ -421,7 +421,7 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       //nothing to do, this is an empty message (the data follows the message)
       break;
     case RAI_MSG_FRONTIER_REQ:
-      if(buflen < 48) { raise(SIGSTOP); return 0;}
+      if(buflen < 40) { raise(SIGSTOP); return 0;}
       lua_rawsetfield_string(L, -1, "account", buf, 32); //start_account
       buf+=32;
       //num = ntohl(*(uint32_t *)buf); no network-ordering on the wire
@@ -532,7 +532,7 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
       //nothing to do, this is an empty message (the data follows the message)
       break;
     case RAI_MSG_FRONTIER_REQ:
-      if(buflen < 48) {
+      if(buflen < 40) {
         *err = "not enough space to write 'frontier_req' message";
         return 0;
       }
