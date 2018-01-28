@@ -11,6 +11,7 @@ local Block = require "prailude.block"
 
 local uv = require "luv"
 local mm = require "mm"
+local coroutine = require "prailude.util.coroutine"
 
 local Rainet = {}
 
@@ -113,26 +114,78 @@ function Rainet.initialize()
 end
 
 function Rainet.bootstrap()
-  local min_frontiers_per_sec = 100
-  local fastpeers = Peer.get_fastest_ping(100)
+  return coroutine.wrap(function()
+    local frontiers = Rainet.fetch_frontiers()
+    print(frontiers, #frontiers)
+    --Rainet.bulk_pull_accounts(frontier)
+    --then do something else
+  end)()
+end
+
+function Rainet.bulk_pull_accounts(frontiers)
+  return Rainet.tcp_peer_pool(frontiers)
+end
+
+function Rainet.fetch_frontiers()
+  local min_frontiers_per_sec = 200
+  local min_good_frontier_requests = 3
   
-  local function frontier_fetcher()
-    for _, peer in ipairs(fastpeers) do
-      local frontiers, err
-      log:debug("bootstrap: starting frontier pull from %s", peer)
-      --do we have a tcp connection to the peer?
-      
-      local largest_frontier_pull_size = tonumber(DB.kv.get("largest_frontier_pull") or 0)
-      local prev_frontiers_count, intervals_checked, times_below_min_rate = 0, 0, 0
+  local good_frontier_requests = 0
+  local largest_frontier_pull_size = tonumber(DB.kv.get("largest_frontier_pull") or 0)
+  local active_peers = {}
+  local frontiers_set, failed, errs = coroutine.workpool({
+    work = (function()
+      local fastpeers = {}
+      return function()
+        if good_frontier_requests < min_good_frontier_requests then
+          local peer = table.remove(fastpeers)
+          if not peer then
+            fastpeers = Peer.get_fastest_ping(100)
+            return table.remove(fastpeers)
+          else
+            return peer
+          end
+        else
+          --the work is done. stop all active peers
+          for peer, _ in pairs(active_peers) do
+            if peer.tcp then
+              peer.tcp:stop("frontier fetch finished")
+            end
+          end
+          return nil
+        end
+      end
+    end)(),
+    retry = 0,
+    progress = (function()
+      local last_failed_peer = 0
+      return function(active_workers, work_done, _, peers_failed, peers_failed_err)
+        good_frontier_requests = #work_done
+        log:debug("frontiers: downloading from %i peers. (%i/%i complete) (%i failed)", active_workers, #work_done, min_good_frontier_requests, #peers_failed)
+        for peer, stats in pairs(active_peers) do
+          log:debug("frontiers: %5d/sec frontiers (%7d total) [%5.2f%%] from %s", stats.rate or 0, (stats.total or 0), (stats.progress or 0) * 100, peer)
+        end
+        while last_failed_peer <= #peers_failed do
+          log:debug("frontiers:   pull failed from %s: %s", peers_failed[last_failed_peer], peers_failed_err[last_failed_peer])
+          last_failed_peer = last_failed_peer + 1
+        end
+      end
+    end)(),
+    worker = function(peer)
       local frontier_pull_size_estimated = false
-      frontiers, err = Frontier.fetch(peer, function(frontiers_so_far, progress)
+      local times_below_min_rate = 0
+      local prev_frontiers_count = 0
+      --log:debug("bootstrap: starting frontier pull from %s", peer)
+      
+      active_peers[peer] = {}
+      local frontiers, err = Frontier.fetch(peer, function(frontiers_so_far, progress)
         --watchdog checker for frontier fetch progress
         local frontiers_per_sec = #frontiers_so_far - prev_frontiers_count
         prev_frontiers_count = #frontiers_so_far
         if frontiers_per_sec < min_frontiers_per_sec then
           --too slow
           times_below_min_rate = times_below_min_rate + 1
-          if times_below_min_rate > 2 then
+          if times_below_min_rate > 4 then
             return false, ("too slow (%i frontiers/sec)"):format(frontiers_per_sec)
           end
         elseif progress > 0.2 and not frontier_pull_size_estimated then
@@ -140,34 +193,21 @@ function Rainet.bootstrap()
           frontier_pull_size_estimated = true
           if #frontiers_so_far * 1/progress < 0.8 * largest_frontier_pull_size then
             --too small
-            return false, ("node seems desynchronized (small estimated frontier %.0f, expected around %.0f)"):format(#frontiers_so_far * 1/progress, largest_frontier_pull_size)
+            return false, ("frontier is too small (circa %.0f, expected %.0f)"):format(#frontiers_so_far * 1/progress, largest_frontier_pull_size)
           end
         end
-        log:debug("bootstrap: got %5d frontiers (%7d total) [%4.3f%%] from %s", frontiers_per_sec, #frontiers_so_far, (progress or 0) * 100, peer)
-        intervals_checked = intervals_checked + 1
+        --track statistics
+        active_peers[peer].rate = frontiers_per_sec
+        active_peers[peer].total = #frontiers_so_far
+        active_peers[peer].progress = progress
         return true
       end)
-      
-      if frontiers and #frontiers < 0.8 * largest_frontier_pull_size then
-        err = ("node seems desynchronized (small frontier %.0f , expected around %.0f)"):format(#frontiers, largest_frontier_pull_size)
-        frontiers = nil
-      end
-      
-      if not frontiers then
-        log:debug("bootstrap: failed to get frontiers from %s : %s", peer, err)
-      else
-        log:debug("bootstrap: got %i frontiers from %s", #frontiers, peer)
-        if #frontiers > largest_frontier_pull_size then
-          DB.kv.set("largest_frontier_pull", #frontiers)
-        end
-        --we got a good one, now process that shit
-        print("we got one!!")
-        --return Account.bulk_pull(frontiers)
-      end
+      active_peers[peer]=nil
+      return frontiers, err
     end
-  end
+  })
   
-  coroutine.wrap(frontier_fetcher)()
+  return frontiers_set, failed, errs
 end
 
 return Rainet
