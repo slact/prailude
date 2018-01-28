@@ -75,8 +75,7 @@ end
 local workpool_defaults = {__index = {
   max_workers = 4,
   retry = 0,
-  
-  inspect_inverval = 1000
+  progress_inverval = 1000
 }}
 
 local Workpool = function(opt)
@@ -207,9 +206,9 @@ local Workpool = function(opt)
   company()
   
   local inspector
-  if opt.inspect then
-    inspector = Timer.interval(opt.inspect_inverval, function()
-      opt.inspect(active_workers, work.todo, work.done, work.fail, work.fail_reason)
+  if opt.progress then
+    inspector = Timer.interval(opt.progress_inverval, function()
+      opt.progress(active_workers, work.done, work.todo, work.fail, work.fail_reason)
     end)
   end
   
