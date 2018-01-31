@@ -139,4 +139,10 @@ return {
       "VALUES(?,?,       ?,     ?, ?,    ?,          ?,      ?,              ?,           ?,       ?)", db:errmsg()))
     setmetatable(Block, BlockDB_meta)
   end,
+  
+  shutdown = function()
+    block_get:finalize()
+    block_get_by_acct:finalize()
+    block_set:finalize()
+  end
 }

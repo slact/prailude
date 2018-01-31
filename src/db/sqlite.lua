@@ -16,6 +16,12 @@ local DB = {
     for _, subdb in ipairs(subdbs) do
       subdb.initialize(db)
     end
+  end,
+  
+  shutdown = function()
+    for _, subdb in ipairs(subdbs) do
+      subdb.shutdown()
+    end
   end
 }
 

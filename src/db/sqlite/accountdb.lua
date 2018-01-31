@@ -118,5 +118,12 @@ return {
     account_update2 = assert(db:prepare("UPDATE accounts (?, ?) VALUES(?, ?) WHERE id = ?"), db:errmsg())
     
     setmetatable(Account, AccountDB_meta)
+  end,
+  
+  shutdown = function()
+    account_get:finalize()
+    account_set:finalize()
+    account_update:finalize()
+    account_update2:finalize()
   end
 }

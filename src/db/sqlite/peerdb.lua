@@ -128,5 +128,14 @@ return {
     peer_update_timestamp = assert(db:prepare("UPDATE peers SET ? = ? WHERE address=? AND port=?"), db:errmsg())
     
     setmetatable(Peer, PeerDB_meta)
+  end,
+  shutdown = function()
+    peer_find:finalize()
+    peer_store:finalize()
+    peer_get_fastest_ping:finalize()
+    peer_get8_except:finalize()
+    peer_get8:finalize()
+    peer_get_active_to_keepalive:finalize()
+    peer_update_timestamp:finalize()
   end
 }
