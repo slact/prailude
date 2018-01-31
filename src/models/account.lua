@@ -9,6 +9,8 @@ local NilDB = require "prailude.db.nil" -- no database
 local util = require "prailude.util"
 local Block
 
+local Account = {}
+
 local Account_meta = { __index = {
   update_frontier = function(self)
     Account.update(self, "frontier")
@@ -20,10 +22,6 @@ local Account_meta = { __index = {
   end
 }}
 
-local Account = {}
-
-local cache = setmetatable({}, {__mode="kv"})
-
 function Account.new(id, frontier)
   local data
   if type(id) == "table" then
@@ -33,20 +31,8 @@ function Account.new(id, frontier)
       id = id,
       frontier = frontier
     }
-  else
-  return setmetatable(data, Account_meta)
-end
-
-function Account.find(id)
-  --caching account finder
-  local acct = rawget(cache, id)
-  if not acct then
-    acct = Account.find_in_db(id)
-    if acct then
-      rawset(cache, id, acct)
-    end
   end
-  return acct
+  return setmetatable(data, Account_meta)
 end
 
 function Account.to_bytes(str)

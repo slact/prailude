@@ -22,43 +22,59 @@ local schema = [[
   CREATE INDEX IF NOT EXISTS account_balance_idx    ON accounts (balance);
 ]]
 
+local cache = setmetatable({}, {__mode="kv"})
 
-local account_get, account_store, account_update, account_update2
+local account_get, account_set, account_update, account_update2
 local db
 local AccountDB_meta = {__index = {
-  find_in_db = function(id)
-    account_get:bind(id)
-    local acct = account_get:nrows()(account_get)
+  find = function(id)
+    local acct = rawget(cache, id)
     if acct then
-      return Account.new(acct)
+      return acct
+    elseif acct == false then
+      return nil
     else
-      return nil, "account not found"
+      account_get:bind(id)
+      acct = account_get:nrows()(account_get)
+      account_get:reset()
+      if acct then
+        return Account.new(acct)
+      else
+        rawset(cache, id, false)
+        return nil, "account not found"
+      end
     end
   end,
+  
   store = function(self)
-    account_store:bind(1, self.id)
-    account_store:bind(2, self.frontier)
-    account_store:bind(3, self.representative_acct)
+    account_set:bind(1, self.id)
+    account_set:bind(2, self.frontier)
+    account_set:bind(3, self.representative_acct)
     if self.balance_raw then
-      account_store:bind(4, self.balance_raw:pack())
-      account_store:bind(5, tonumber(tostring(self.balance_raw)))
+      account_set:bind(4, self.balance_raw:pack())
+      account_set:bind(5, tonumber(tostring(self.balance_raw)))
     else
-      account_store:bind(4, nil)
-      account_store:bind(5, nil)
-    end)
-    account_store:bind(6, self.delegated_balance)
+      account_set:bind(4, nil)
+      account_set:bind(5, nil)
+    end
+    account_set:bind(6, self.delegated_balance)
     
     if self.source_peer then
-      account_store:bind(7, tostring(self.source_peer))
+      account_set:bind(7, tostring(self.source_peer))
     else
-      account_store:bind(7, nil)
+      account_set:bind(7, nil)
     end
     
-    account_store:step()
+    account_set:step()
     --TODO: check for sqlite3.BUSY and such responses
-    account_store:reset()
+    account_set:reset()
+    
+    --cache update
+    rawset(cache, self.id, self)
+    
     return self
   end,
+  
   update = function(self, what)
     if     what == "balance" or what == "balance_raw" then
       account_update2:bind(1, "balance_raw")
