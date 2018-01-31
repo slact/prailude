@@ -13,6 +13,7 @@ local db
 local kv_get, kv_set
 
 local KvDB = {}
+local cache = setmetatable({}, {__mode = "kv"})
 
 function KvDB.initialize(db_ref)
   db = db_ref
@@ -29,12 +30,20 @@ function KvDB.shutdown()
 end
 
 function KvDB.get(k)
-  if kv_get:bind(1, k) ~= sqlite3.OK then
-    error(db:errmsg())
+  local val = rawget(cache, k)
+  if val then
+    return val
+  elseif val == false then
+    return nil
+  else
+    if kv_get:bind(1, k) ~= sqlite3.OK then
+      error(db:errmsg())
+    end
+    val = kv_get:urows()(kv_get)
+    kv_get:reset()
+    rawset(cache, k, val or false)
+    return val
   end
-  local val = kv_get:urows()(kv_get)
-  kv_get:reset()
-  return val
 end
 
 function KvDB.set(k, v)
@@ -44,6 +53,7 @@ function KvDB.set(k, v)
   kv_set:step()
   --TODO: check and account for sqlite3.BUSY and such responses
   kv_set:reset()
+  rawset(cache, k, v)
   return v
 end
 
