@@ -135,7 +135,7 @@ return {
     block_get = assert(db:prepare("SELECT * FROM blocks WHERE hash = ?"), db:errmsg())
     block_get_by_acct = assert(db:prepare("SELECT * FROM blocks WHERE account = ? ORDER BY n DESC"), db:errmsg())
     block_set = assert(db:prepare("INSERT OR REPLACE INTO blocks " ..
-      "(hash, raw, account, valid, n, type, prev_block, source, representative, destination, balance)" ..
+      "(hash, raw, account, valid, n, type, prev_block, source, representative, destination, balance) " ..
       "VALUES(?,?,       ?,     ?, ?,    ?,          ?,      ?,              ?,           ?,       ?)", db:errmsg()))
     setmetatable(Block, BlockDB_meta)
   end,
