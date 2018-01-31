@@ -6,11 +6,12 @@ local schema = [[
     hash                 TEXT,
     raw                  TEXT,
     
+    account              TEXT,
     valid                INTEGER, --0: invalid
                                   --1: PoW ok
-                                  --2: sig ok
-                                  --3: ledger check ok
-                                  --4: confirmed
+                                  --4: sig ok
+                                  --5: ledger check ok
+                                  --6: confirmed
     
     n                    INTEGER, --block number in account (OPEN = 0)
     type                 TEXT,
@@ -19,11 +20,10 @@ local schema = [[
     representative_acct  TEXT, --open, change
     destination_acct     TEXT, --send
     balance              TEXT,
-    
-    
 
     PRIMARY KEY(hash)
   ) WITHOUT ROWID;
+  CREATE INDEX IF NOT EXISTS block_account_idx      ON blocks (account);
   CREATE INDEX IF NOT EXISTS block_valid_idx        ON blocks (valid);
   CREATE INDEX IF NOT EXISTS block_type_idx         ON blocks (type);
   CREATE INDEX IF NOT EXISTS block_prev_idx         ON blocks (prev_block);
@@ -43,11 +43,18 @@ local schema = [[
   --CREATE INDEX IF NOT EXISTS blocksource_time_idx        ON block_sources (time);
 ]]
 
+local block_by_account_cache_meta = {__mode="kv"}
+local cache = {
+  hash = setmetatable({}, {__mode="kv"}),
+  account = setmetatable({}, {__mode="k"})
+}
 
 local db
-local BlockDB_meta = {__index = function(_, k)
-  error(tostring(k) .. " not yet implemented")
-end}
+local BlockDB_meta = {__index = {
+  find = function(hash)
+    
+  end,
+}}
 
 return {
   initialize = function(db_ref)

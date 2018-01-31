@@ -23,7 +23,7 @@ local Frontier = {}
 
 function Frontier.new(data, peer)
   if peer then
-    data.source_peer = peer.id
+    data.source_peer = tostring(peer)
   end
   return setmetatable((data or {}), Frontier_meta)
 end

@@ -116,14 +116,69 @@ end
 function Rainet.bootstrap()
   return coroutine.wrap(function()
     local frontiers = Rainet.fetch_frontiers()
-    print(frontiers, #frontiers)
-    --Rainet.bulk_pull_accounts(frontier)
+    
+    for _, frontier in pairs(frontiers) do
+      Rainet.bulk_pull_accounts(frontier)
+    end
+    
     --then do something else
   end)()
 end
 
-function Rainet.bulk_pull_accounts(frontiers)
-  return Rainet.tcp_peer_pool(frontiers)
+function Rainet.bulk_pull_accounts(frontier)
+  local min_speed = 1000 --blocks/sec
+  local active_peers = {}
+  local frontier_size = #frontier
+  
+  local getpeer; do
+    local fastpeers = {}
+    getpeer = function()
+      if good_frontier_requests < min_good_frontier_requests then
+        local peer = table.remove(fastpeers)
+        if not peer then
+          fastpeers = Peer.get_fastest_ping(500)
+          return table.remove(fastpeers)
+        else
+          return peer
+        end
+      else
+        --the work is done. stop all active peers
+        for peer, _ in pairs(active_peers) do
+          if peer.tcp then
+            peer.tcp:stop("frontier fetch finished")
+          end
+        end
+        return nil
+      end
+    end
+  end
+  
+  local ok, failed, errs = coroutine.workpool({
+    work = frontier,
+    retry = 4,
+    progress = function(active_workers, work_done, _, work_failed)
+      local bus_data = {
+        complete = false,
+        active_peers = active_peers,
+        frontier_size = frontier_size,
+        accounts_fetched = #work_done,
+        accounts_failed = #work_failed
+      }
+      log:debug("bulk pull: using %i workers, finished %i of %i accounts [%3.2f] (%i failed)", active_workers, #work_done, frontier_size, 100 * #work_done / frontier_size, #work_failed)
+    end,
+    worker = function(frontier)
+      
+      
+      
+      local peer = getpeer()
+      active_peers[peer] = {}
+      
+      
+      
+      active_peers[peer]=nil
+    end
+  })
+  
 end
 
 function Rainet.fetch_frontiers()
@@ -160,15 +215,25 @@ function Rainet.fetch_frontiers()
     progress = (function()
       local last_failed_peer = 0
       return function(active_workers, work_done, _, peers_failed, peers_failed_err)
+        local bus_data = {
+          complete = false,
+          frontier_requests_completed = #work_done,
+          active_peers = active_peers,
+          failed_peers = {}
+        }
         good_frontier_requests = #work_done
         log:debug("frontiers: downloading from %i peers. (%i/%i complete) (%i failed)", active_workers, #work_done, min_good_frontier_requests, #peers_failed)
         for peer, stats in pairs(active_peers) do
           log:debug("frontiers: %5d/sec frontiers (%7d total) [%5.2f%%] from %s", stats.rate or 0, (stats.total or 0), (stats.progress or 0) * 100, peer)
         end
         while last_failed_peer <= #peers_failed do
-          log:debug("frontiers:   pull failed from %s: %s", peers_failed[last_failed_peer], peers_failed_err[last_failed_peer])
+          local failed_peer = peers_failed[last_failed_peer]
+          local failed_peer_error = peers_failed_err[last_failed_peer]
+          log:debug("frontiers:   pull failed from %s: %s", failed_peer, failed_peer_error)
           last_failed_peer = last_failed_peer + 1
+          bus_data.failed_peers[failed_peer] = failed_peer_error
         end
+        bus:pub("fetch_frontiers:progress", bus_data)
       end
     end)(),
     worker = function(peer)
@@ -205,6 +270,10 @@ function Rainet.fetch_frontiers()
       active_peers[peer]=nil
       return frontiers, err
     end
+  })
+  bus:pub("fetch_frontiers:progress", {
+    complete = true,
+    frontier_requests_completed = #frontiers_set
   })
   
   return frontiers_set, failed, errs

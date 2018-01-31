@@ -1,5 +1,6 @@
 local coroutine_running = coroutine.running
 local coroutine_resume = coroutine.resume
+local mm = require "mm"
 
 local function running()
   --always behave like lua5.1's coroutine.running
@@ -90,8 +91,6 @@ local Workpool = function(opt)
   }
   opt = setmetatable(opt or {}, workpool_defaults)
   assert(type(opt.worker) == "function")
-  
-  
   
   local nextjob, havejob --jobs iterator
   local retryjob
