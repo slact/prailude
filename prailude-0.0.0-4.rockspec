@@ -21,7 +21,6 @@ dependencies = {
   "lualogging",
   --"lightningmdb", --nope
   "lsqlite3",
-  "luaprompt",
   "mm"
 }
 build = {
