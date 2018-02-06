@@ -4,7 +4,7 @@ local log = require "prailude.log"
 local coroutine = require "prailude.util.coroutine"
 local Peer = require "prailude.peer"
 local Message = require "prailude.message"
-local Parser = require "prailude.message.parser"
+local Parser = require "prailude.util.parser"
 local NilDB = require "prailude.db.nil" -- no database
 local util = require "prailude.util"
 local Block
@@ -47,10 +47,7 @@ function Account.bulk_pull(frontier, peer, watchdog)
   Block = require "prailude.block" --late require
   
   assert(coroutine.running(), "Account.bulk_pull must be called in a coroutine")
-  local bulk_pull_message = Message.new("bulk_pull", {
-    account = frontier.account,
-    block_hash = frontier.last_block_hash
-  })
+  local bulk_pull_message = Message.new("bulk_pull", frontier)
   
   local blocks_so_far = {}
   
@@ -62,7 +59,7 @@ function Account.bulk_pull(frontier, peer, watchdog)
     tcp:write(bulk_pull_message:pack())
     local fresh_blocks, leftovers_or_err, done
     while tcp:read() do
-      fresh_blocks, leftovers_or_err, done = Parser.unpack_bulk_pull(tcp.buf:flush())
+      fresh_blocks, leftovers_or_err, done = Parser.unpack_bulk(tcp.buf:flush())
       if not fresh_blocks then -- there was an error
         return nil, "error unpacking bulk blocks: " .. tostring(leftovers_or_err)
       elseif not done then
@@ -74,7 +71,7 @@ function Account.bulk_pull(frontier, peer, watchdog)
           tcp.buf:push(leftovers_or_err)
         end
       else
-        log:debug("finished getting blocks for %s (%7d total) from %s", blocks_so_far, Account.to_readable(frontier.account), peer)
+        log:debug("finished getting blocks for %s (%7d total) from %s", Account.to_readable(frontier.account), #blocks_so_far, peer)
         -- no more frontiers here
         return blocks_so_far
       end

@@ -414,7 +414,7 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       if(buflen < 64) {raise(SIGSTOP); return 0;}
       lua_rawsetfield_string(L, -1, "account", buf, 32); //start_account
       buf+=32;
-      lua_rawsetfield_string(L, -1, "block_hash", buf, 32); //end_block
+      lua_rawsetfield_string(L, -1, "hash", buf, 32); //end_block
       buf+=32;
       break;
     case RAI_MSG_BULK_PUSH:
@@ -425,7 +425,6 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       lua_rawsetfield_string(L, -1, "account", buf, 32); //start_account
       buf+=32;
       //num = ntohl(*(uint32_t *)buf); no network-ordering on the wire
-      lua_inspect_stack(L, "got FRONTIER_REQ");
       num = *(uint32_t *)buf;
       lua_rawsetfield_number(L, -1, "frontier_age", num);
       buf+=4;
@@ -526,7 +525,7 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
         return 0;
       }
       buf += lua_table_field_fixedsize_string_encode(L, -1, "account",     buf, 32); //start_account
-      buf += lua_table_field_fixedsize_string_encode(L, -1, "block_hash",  buf, 32); //end block hash
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "hash",        buf, 32); //end block hash
       break;
     case RAI_MSG_BULK_PUSH:
       //nothing to do, this is an empty message (the data follows the message)
@@ -654,10 +653,10 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
   switch(blocktype) {
     case RAI_BLOCK_SEND:
       if(buflen < 152) {
-        raise(SIGSTOP);
         return 0; //need moar bytes
       }
-      lua_createtable(L, 0, 5);
+      lua_createtable(L, 0, 7);
+      lua_rawsetfield_string(L, -1, "type", "send", 4);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "previous",     buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "destination",  buf, 32); //destination account
       buf += lua_rawsetfield_string_scanbuf(L, -1, "balance",      buf, 16); //uint128_t encoding?
@@ -666,10 +665,10 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       break;
     case RAI_BLOCK_RECEIVE:
       if(buflen < 136) {
-        raise(SIGSTOP);
         return 0; //moar bytes plz
       }
-      lua_createtable(L, 0, 4);
+      lua_createtable(L, 0, 6);
+      lua_rawsetfield_string(L, -1, "type", "receive", 7);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "previous",     buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "source",       buf, 32); //source block
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
@@ -677,10 +676,10 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       break;
     case RAI_BLOCK_OPEN:
       if(buflen < 168) {
-        raise(SIGSTOP);
         return 0; //gib byts nao
       }
-      lua_createtable(L, 0, 4);
+      lua_createtable(L, 0, 6);
+      lua_rawsetfield_string(L, -1, "type", "open", 4);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "source",       buf, 32); //source account of first 'send' block
       buf += lua_rawsetfield_string_scanbuf(L, -1, "representative",buf, 32); //voting delegate
       buf += lua_rawsetfield_string_scanbuf(L, -1, "account",      buf, 32); //own acct (pubkey)
@@ -689,10 +688,9 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       break;
     case RAI_BLOCK_CHANGE:
       if(buflen < 136) {
-        raise(SIGSTOP);
         return 0; //such bytes, not enough wow
       }
-      lua_createtable(L, 0, 4);
+      lua_createtable(L, 0, 5);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "previous",     buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "representative",buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
@@ -891,6 +889,73 @@ static int prailude_pack_frontiers(lua_State *L) {
   return luaL_error(L, "Not yet implemented");
 }
 
+static int prailude_unpack_bulk(lua_State *L) {
+  size_t           sz, bytes_read;
+  const char      *buf = luaL_checklstring(L, 1, &sz);
+  const char      *end = &buf[sz];
+  const char      *cur = buf;
+  const char      *err;
+  int              n = 0, done = 0;
+  rai_block_type_t blocktype;
+  
+  lua_newtable(L);
+  
+  while(cur < end) {
+    blocktype = (rai_block_type_t )*cur;
+    cur++;
+    if(blocktype == RAI_BLOCK_INVALID) {
+      lua_pushnil(L);
+      lua_pushstring(L, "unexpected block type 0 (INVALID) in bulk pull");
+      return 2;
+    }
+    else if(blocktype == RAI_BLOCK_NOT_A_BLOCK) {
+      done = 1;
+      break;
+    }
+    else {
+      err = NULL;
+      bytes_read = block_decode_unpack(blocktype, L, cur, end - cur, &err);
+      cur += bytes_read;
+      if(bytes_read == 0) {
+        break;
+      }
+      else {
+        //add newly unpacked block to table of blocks
+        lua_rawseti(L, -2, ++n);
+      }
+    }
+  }
+  
+  if(err && bytes_read == 0) {
+    //there was an error. return nil, err
+    lua_pushnil(L);
+    lua_pushstring(L, err);
+    return 2;
+  }
+  else if(done) {
+    //discard leftovers
+    lua_pushnil(L);
+    lua_pushboolean(L, 1);
+    return 3;
+  }
+  else if(!err && bytes_read == 0) {
+    //we have leftovers
+    lua_pushlstring(L, cur, (end - cur));
+    lua_pushboolean(L, 0);
+    return 3;
+  }
+  else {
+    //no leftovers, but not done yet
+    lua_pushnil(L);
+    lua_pushboolean(L, 0);
+    return 3;
+  }  
+}
+
+static int prailude_pack_bulk(lua_State *L) {
+  return luaL_error(L, "not yet implemented");
+}
+
 static int prailude_pack_block(lua_State *L) {
   char               buf[512];
   size_t             len;
@@ -942,6 +1007,9 @@ static const struct luaL_Reg prailude_parser_functions[] = {
   
   { "unpack_frontiers", prailude_unpack_frontiers },
   { "pack_frontiers", prailude_pack_frontiers },
+  
+  { "unpack_bulk", prailude_unpack_bulk },
+  { "pack_bulk", prailude_pack_bulk },
   
   // { "parse_bulk_stream", prailude_parse_bulk_stream },
   { NULL, NULL }

@@ -1,11 +1,11 @@
 local Peer = require "prailude.peer"
 local log = require "prailude.log"
-local bus = require "prailude.bus"
+local Bus = require "prailude.bus"
 local config = require "prailude.config"
 local Timer = require "prailude.util.timer"
 local DB = require "prailude.db"
 local Frontier = require "prailude.frontier"
---local Account = require "prailude.account"
+local Account = require "prailude.account"
 local Message = require "prailude.message"
 local Block = require "prailude.block"
 
@@ -33,7 +33,7 @@ local function keepalive()
     return peer_name, peer_port
   end
   
-  bus.sub("run", function()
+  Bus.sub("run", function()
     local keepalive_msg = Message.new("keepalive", {peers = {}})
     for _, preconfd_peer in pairs(config.node.preconfigured_peers) do
       local peer_name, peer_port = parse_bootstrap_peer(preconfd_peer)
@@ -46,7 +46,7 @@ local function keepalive()
   end)
   
   --keepalive parsing and response
-  bus.sub("message:receive:keepalive", function(ok, msg, peer)
+  Bus.sub("message:receive:keepalive", function(ok, msg, peer)
     if not ok then
       return log:warning("rainet: message:receive:keepalive failed from peer %s: %s", peer, msg)
     end
@@ -84,21 +84,21 @@ local function handle_blocks()
       return true
     end
   end
-  bus.sub("message:receive:publish", function(ok, msg, peer)
+  Bus.sub("message:receive:publish", function(ok, msg, peer)
     if not ok then
       return log:warning("rainet: message:receive:publish from %s failed: %s", peer, msg)
     end
     local block = Block.new(msg.block_type, msg.block)
     check_block(block, peer)
   end)
-  bus.sub("message:receive:confirm_req", function(ok, msg, peer)
+  Bus.sub("message:receive:confirm_req", function(ok, msg, peer)
     if not ok then
       return log:warning("rainet: message:receive:confirm_req from %s failed: %s", peer, msg)
     end
     local block = Block.new(msg.block_type, msg.block)
     check_block(block, peer)
   end)
-  bus.sub("message:receive:confirm_ack", function(ok, msg, peer)
+  Bus.sub("message:receive:confirm_ack", function(ok, msg, peer)
     if not ok then
       return log:warning("rainet: message:receive:confirm_ack from %s failed: %s", peer, msg)
     end
@@ -126,29 +126,21 @@ function Rainet.bootstrap()
 end
 
 function Rainet.bulk_pull_accounts(frontier)
-  local min_speed = 1000 --blocks/sec
+  Account =  require "prailude.account"
+  local min_speed = 300 --blocks/sec
   local active_peers = {}
   local frontier_size = #frontier
+  local total_blocks_fetched = 0
   
   local getpeer; do
     local fastpeers = {}
     getpeer = function()
-      if good_frontier_requests < min_good_frontier_requests then
-        local peer = table.remove(fastpeers)
-        if not peer then
-          fastpeers = Peer.get_fastest_ping(500)
-          return table.remove(fastpeers)
-        else
-          return peer
-        end
+      local peer = table.remove(fastpeers)
+      if not peer then
+        fastpeers = Peer.get_fastest_ping(500)
+        return table.remove(fastpeers)
       else
-        --the work is done. stop all active peers
-        for peer, _ in pairs(active_peers) do
-          if peer.tcp then
-            peer.tcp:stop("frontier fetch finished")
-          end
-        end
-        return nil
+        return peer
       end
     end
   end
@@ -165,20 +157,38 @@ function Rainet.bulk_pull_accounts(frontier)
         accounts_failed = #work_failed
       }
       log:debug("bulk pull: using %i workers, finished %i of %i accounts [%3.2f] (%i failed)", active_workers, #work_done, frontier_size, 100 * #work_done / frontier_size, #work_failed)
+      Bus.pub("bulk_pull:progress", bus_data)
     end,
-    worker = function(frontier)
-      
-      
-      
+    worker = function(acct_frontier)
       local peer = getpeer()
-      active_peers[peer] = {}
-      
-      
-      
+      active_peers[peer] = {frontier = acct_frontier, blockes_pulled = 0}
+      local prev_blocks = 0
+      local acct_blocks, err = Account.bulk_pull(acct_frontier, peer, function(blocks_so_far)
+        local blocks_fetched = #blocks_so_far - prev_blocks
+        prev_blocks = #blocks_so_far
+        total_blocks_fetched = total_blocks_fetched + blocks_fetched
+        if blocks_fetched < min_speed then -- too slow
+          return false, "account pull too slow"
+        else
+          active_peers[peer].blocks_pulled = blocks_so_far
+        end
+      end)
       active_peers[peer]=nil
+      return acct_blocks, err
     end
   })
   
+  local bus_data = {
+    complete = true,
+    frontier_size = frontier_size,
+    accounts_fetched = #ok,
+    accounts_failed = #failed,
+    blocks_fetched = total_blocks_fetched
+  }
+  
+  Bus.pub("bulk_pull:progress",  bus_data)
+  
+  return ok, failed, errs
 end
 
 function Rainet.fetch_frontiers()
@@ -187,6 +197,10 @@ function Rainet.fetch_frontiers()
   
   local good_frontier_requests = 0
   local largest_frontier_pull_size = tonumber(DB.kv.get("largest_frontier_pull") or 0)
+  if config.bootstrap.min_frontier_size > largest_frontier_pull_size then
+    largest_frontier_pull_size = config.bootstrap.min_frontier_size
+  end
+  
   local active_peers = {}
   local frontiers_set, failed, errs = coroutine.workpool({
     work = (function()
@@ -213,7 +227,7 @@ function Rainet.fetch_frontiers()
     end)(),
     retry = 0,
     progress = (function()
-      local last_failed_peer = 0
+      local last_failed_peer = 1
       return function(active_workers, work_done, _, peers_failed, peers_failed_err)
         local bus_data = {
           complete = false,
@@ -233,7 +247,7 @@ function Rainet.fetch_frontiers()
           last_failed_peer = last_failed_peer + 1
           bus_data.failed_peers[failed_peer] = failed_peer_error
         end
-        bus:pub("fetch_frontiers:progress", bus_data)
+        Bus.pub("fetch_frontiers:progress", bus_data)
       end
     end)(),
     worker = function(peer)
@@ -271,7 +285,7 @@ function Rainet.fetch_frontiers()
       return frontiers, err
     end
   })
-  bus:pub("fetch_frontiers:progress", {
+  Bus.pub("fetch_frontiers:progress", {
     complete = true,
     frontier_requests_completed = #frontiers_set
   })

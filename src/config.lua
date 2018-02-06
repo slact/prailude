@@ -4,6 +4,9 @@ local cfg = {
     preconfigured_peers = {
       "rai.raiblocks.net"
     }
+  },
+  bootstrap = {
+    min_frontier_size = 335700
   }
 }
 

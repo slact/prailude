@@ -75,7 +75,8 @@ local Block_instance = {
     if self.type == "open" then
       return verify_edDSA_blake2b_signature(self.hash, self.signature, self.account)
     else
-      error("not implemented yet")
+      return true -- for now
+      --error("not implemented yet")
     end
   end,
   verify_consistency = function(self)
@@ -111,6 +112,7 @@ function Block.new(block_type, data)
     data.balance = Balance.unpack(data.balance)
   end
   if not block_typecode[data.type] then
+    mm(data)
     error("invalid block type " .. tostring(data.type))
   end
   return setmetatable(data, block_meta)

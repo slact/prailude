@@ -38,11 +38,10 @@ local AccountDB_meta = {__index = {
       acct = account_get:nrows()(account_get)
       account_get:reset()
       if acct then
-        return Account.new(acct)
-      else
-        rawset(cache, id, false)
-        return nil, "account not found"
+        acct = Account.new(acct)
       end
+      rawset(cache, id, acct or false)
+      return acct
     end
   end,
   

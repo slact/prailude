@@ -28,8 +28,8 @@ local schema = [[
   CREATE INDEX IF NOT EXISTS block_type_idx         ON blocks (type);
   CREATE INDEX IF NOT EXISTS block_prev_idx         ON blocks (prev_block);
   CREATE INDEX IF NOT EXISTS block_source_idx       ON blocks (source);
-  CREATE INDEX IF NOT EXISTS block_rep_idx          ON blocks (representative_acct);
-  CREATE INDEX IF NOT EXISTS block_dst_idx          ON blocks (destination_acct);
+  CREATE INDEX IF NOT EXISTS block_rep_idx          ON blocks (representative);
+  CREATE INDEX IF NOT EXISTS block_dst_idx          ON blocks (destination);
   CREATE INDEX IF NOT EXISTS block_balance_idx      ON blocks (balance);
   
   CREATE TABLE IF NOT EXISTS block_sources (
@@ -59,6 +59,9 @@ local BlockDB_meta = {__index = {
       block = block_get:nrows()(block_get)
       --TODO: check for sqlite3.BUSY and such responses
       block_get:reset()
+      if block then
+        block = Block.new(block)
+      end
       rawset(cache.hash, hash, block or false)
     elseif block == false then
       return nil

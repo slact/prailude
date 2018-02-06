@@ -19,7 +19,8 @@ local schema = [[
 
 local db
 
-local peer_find, peer_store, peer_get8, peer_get8_except, peer_get_active_to_keepalive, peer_get_fastest_ping, peer_update_timestamp
+local peer_find, peer_store, peer_get8, peer_get8_except, peer_get_active_to_keepalive, peer_get_fastest_ping
+local peer_update_timestamp = {}
 
 local cache = setmetatable({}, {__mode = "kv"})
 
@@ -34,6 +35,9 @@ local PeerDB_meta = {__index = {
       peer_find:bind(2, peer_port)
       peer = peer_find:nrows()(peer_find)
       peer_find:reset()
+      if peer then
+        peer = Peer.new(peer)
+      end
       rawset(cache, id, peer or false)
       return peer
     else
@@ -99,12 +103,13 @@ local PeerDB_meta = {__index = {
   end,
   
   update_timestamp_field = function(self, timestamp_field)
-    peer_update_timestamp:bind(1, timestamp_field)
-    peer_update_timestamp:bind(2, self[timestamp_field])
-    peer_update_timestamp:bind(3, self.address)
-    peer_update_timestamp:bind(4, self.port)
-    peer_update_timestamp:step()
-    peer_update_timestamp:reset()
+    local stmt = peer_update_timestamp[timestamp_field]
+    assert(stmt, "unknown timestamp field")
+    stmt:bind(1, self[timestamp_field])
+    stmt:bind(2, self.address)
+    stmt:bind(3, self.port)
+    stmt:step()
+    stmt:reset()
     return self
   end
 }}
@@ -125,8 +130,9 @@ return {
     peer_get8_except = assert(db:prepare("SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - ? AND address !=? AND port != ? ORDER BY RANDOM() LIMIT 8"), db:errmsg())
     peer_get8 = assert(db:prepare("SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - ? ORDER BY RANDOM() LIMIT 8"), db:errmsg())
     peer_get_active_to_keepalive = assert(db:prepare("SELECT * FROM peers WHERE last_keepalive_received > ? AND last_keepalive_received < ? ORDER BY RANDOM()"), db:errmsg())
-    peer_update_timestamp = assert(db:prepare("UPDATE peers SET ? = ? WHERE address=? AND port=?"), db:errmsg())
-    
+    for _, v in pairs{"last_received", "last_sent", "last_keepalive_sent", "last_keepalive_received"} do
+      peer_update_timestamp[v] = assert(db:prepare("UPDATE peers SET " .. v.." = ? WHERE address = ? AND port = ?"), db:errmsg())
+    end
     setmetatable(Peer, PeerDB_meta)
   end,
   shutdown = function()
@@ -136,6 +142,8 @@ return {
     peer_get8_except:finalize()
     peer_get8:finalize()
     peer_get_active_to_keepalive:finalize()
-    peer_update_timestamp:finalize()
+    for _, v in pairs(peer_update_timestamp) do
+      v:finalize()
+    end
   end
 }
