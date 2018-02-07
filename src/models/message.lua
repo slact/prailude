@@ -97,8 +97,8 @@ function Message.new(msgtype, data) -- (data) is also ok, as long as there's a d
   return msg
 end
 
-function Message.unpack(str)
-  local data, leftovers = Parser.unpack_message(str)
+function Message.unpack(str, unpack_block)
+  local data, leftovers = Parser.unpack_message(str, unpack_block or false)
   if not data then
     return nil, leftovers
   else

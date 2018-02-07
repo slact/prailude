@@ -112,7 +112,9 @@ static void lua_rawsetfield_number(lua_State *L, int tindex, const char *field, 
   lua_rawset(L, tindex);
 }
 
+typedef size_t (*block_unpack_fn)(rai_block_type_t, lua_State *, const char *, size_t , const char **);
 static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err);
+static size_t block_decode_raw(rai_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err);
 static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *buf, size_t buflen);
   
 static size_t lua_rawsetfield_string_scanbuf(lua_State *L, int tindex, const char *field, const char *buf, size_t buflen) {
@@ -325,7 +327,7 @@ static size_t message_header_decode(rai_msg_header_t *hdr, const char *buf, size
   
   return 8;
 }
-static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, const char *buf, size_t buflen, const char **errstr) {
+static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, const char *buf, size_t buflen, int unpack_block, const char **errstr) {
   // expects target message table to be at top of stack
   int          i, j;
   
@@ -336,6 +338,8 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
   const char  *buf_start = buf;
   size_t       parsed;
   uint32_t     num;
+  block_unpack_fn block_decoder = unpack_block ? block_decode_unpack : block_decode_raw;
+  
   switch(hdr->msg_type) {
     case RAI_MSG_INVALID:
     case RAI_MSG_NO_TYPE:
@@ -380,12 +384,11 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
     case RAI_MSG_PUBLISH:
     case RAI_MSG_CONFIRM_REQ:
       lua_pushliteral(L, "block");
-      parsed = block_decode_unpack(hdr->block_type, L, buf, buflen, errstr); //pushes block table onto stack
+      parsed = block_decoder(hdr->block_type, L, buf, buflen, errstr); //pushes block onto stack
       if(parsed == 0) { // need more bytes probably, or maybe there wasa parsing error
         raise(SIGSTOP);
         return 0;
       }
-      
       lua_rawset(L, -3);
       buf+= parsed;
       break;
@@ -402,7 +405,7 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       buf+=8;
       
       lua_pushliteral(L, "block");
-      parsed = block_decode_unpack(hdr->block_type, L, buf, buflen - (buf - buf_start), errstr); //pushes block table onto stack
+      parsed = block_decoder(hdr->block_type, L, buf, buflen - (buf - buf_start), errstr); //pushes block onto stack
       if(parsed == 0) { // need more bytes probably, or maybe there was parsing error
         raise(SIGSTOP);
         return 0;
@@ -646,13 +649,47 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
   return buf - buf_start;
 }
 
+#define RAI_BLOCK_SEND_SZ     152
+#define RAI_BLOCK_RECEIVE_SZ  136
+#define RAI_BLOCK_OPEN_SZ     168
+#define RAI_BLOCK_CHANGE_SZ   136
+
+static size_t block_decode_raw(rai_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err) {
+  size_t sz;
+  switch(blocktype) {
+    case RAI_BLOCK_SEND:
+      sz = RAI_BLOCK_SEND_SZ;
+      break;
+    case RAI_BLOCK_RECEIVE:
+      sz = RAI_BLOCK_RECEIVE_SZ;
+      break;
+    case RAI_BLOCK_OPEN:
+      sz = RAI_BLOCK_OPEN_SZ;
+      break;
+    case RAI_BLOCK_CHANGE:
+      sz = RAI_BLOCK_CHANGE_SZ;
+      break;
+    case RAI_BLOCK_INVALID:
+      *err = "tried to unpack 'invalid' type block";
+      return 0;
+    case RAI_BLOCK_NOT_A_BLOCK:
+      *err = "tried to unpack 'not_a_block' type block";
+      return 0;
+  }
+  if(sz < buflen) {
+    return 0; //need moar bytes
+  }
+  lua_pushlstring(L, buf, sz);
+  return sz;
+}
+
 //read in *buf, leaves a table with the unpacked block on top of the stack
 //return bytes read, 0 if not enough bytes available to read block
 static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err) {
   const char      *buf_start = buf;
   switch(blocktype) {
     case RAI_BLOCK_SEND:
-      if(buflen < 152) {
+      if(buflen < RAI_BLOCK_SEND_SZ) {
         return 0; //need moar bytes
       }
       lua_createtable(L, 0, 7);
@@ -664,7 +701,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
       break;
     case RAI_BLOCK_RECEIVE:
-      if(buflen < 136) {
+      if(buflen < RAI_BLOCK_RECEIVE_SZ) {
         return 0; //moar bytes plz
       }
       lua_createtable(L, 0, 6);
@@ -675,7 +712,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8);
       break;
     case RAI_BLOCK_OPEN:
-      if(buflen < 168) {
+      if(buflen < RAI_BLOCK_OPEN_SZ) {
         return 0; //gib byts nao
       }
       lua_createtable(L, 0, 6);
@@ -687,10 +724,11 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8);
       break;
     case RAI_BLOCK_CHANGE:
-      if(buflen < 136) {
+      if(buflen < RAI_BLOCK_CHANGE_SZ) {
         return 0; //such bytes, not enough wow
       }
-      lua_createtable(L, 0, 5);
+      lua_createtable(L, 0, 6);
+      lua_rawsetfield_string(L, -1, "type", "change", 6);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "previous",     buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "representative",buf, 32);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
@@ -749,11 +787,11 @@ static int prailude_unpack_message(lua_State *L) {
   size_t              msg_sz;
   rai_msg_header_t    header;
   const char         *err = NULL;
+  int                 unpack_block;
+  luaL_argcheck(L, lua_gettop(L) == 2, 0, "incorrect number of arguments: must have the packed message and if block should be unpacked");
   
-  luaL_argcheck(L, lua_gettop(L) == 1, 0, "incorrect number of arguments: must have just the packed message");
-  
-  
-  packed_msg = lua_tolstring(L, -1, &msg_sz);
+  packed_msg = lua_tolstring(L, 1, &msg_sz);
+  unpack_block = lua_toboolean(L, 2);
   if(!packed_msg || msg_sz == 0) {
     //raise(SIGSTOP);
     lua_pushnil(L);
@@ -778,7 +816,7 @@ static int prailude_unpack_message(lua_State *L) {
   }
   cur+=sz;
   
-  sz = message_body_decode_unpack(L, &header, cur, msg_sz - (cur - packed_msg), &err);
+  sz = message_body_decode_unpack(L, &header, cur, msg_sz - (cur - packed_msg), unpack_block, &err);
   if(sz == 0) {
     lua_pushnil(L);
     lua_pushstring(L, err ? err : "error decoding and unpacking message body");

@@ -100,6 +100,9 @@ local Block = {}
 function Block.new(block_type, data)
   if data then
     assert(type(block_type) == "string")
+    if type(data) == "string" then --in the raw
+      data = assert(Block.unpack(block_type, data))
+    end
     data.type = block_type
   elseif type(block_type) == "table" then
     data = block_type
@@ -129,12 +132,24 @@ function Block.get(data)
   end
 end
 
+local block_cache = {}
+for _, v in pairs{"open", "change", "receive", "send"} do
+  block_cache[v]=setmetatable({}, {__mode="kv"})
+end
+
 function Block.unpack(block_type, raw)
-  local data, err = Parser.unpack_block(block_type, raw)
-  if not data then
-    return nil, err
+  local bcache = rawget(block_cache, block_type)
+  local block = rawget(bcache, raw)
+  if not block then
+    local data, err = Parser.unpack_block(rawget(block_typecode, block_type), raw)
+    if not data then
+      return nil, err
+    end
+    block = Block.new(data)
+    --TODO: make block immutable
+    rawset(bcache, raw, block)
   end
-  return Block.new(data)
+  return block
 end
 
 local main_net = true
