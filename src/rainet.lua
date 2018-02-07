@@ -8,6 +8,7 @@ local Frontier = require "prailude.frontier"
 local Account = require "prailude.account"
 local Message = require "prailude.message"
 local Block = require "prailude.block"
+local Vote = require "prailude.vote"
 
 local uv = require "luv"
 local mm = require "mm"
@@ -88,22 +89,27 @@ local function handle_blocks()
     if not ok then
       return log:warning("rainet: message:receive:publish from %s failed: %s", peer, msg)
     end
-    local block = Block.new(msg.block_type, msg.block)
+    local block = Block.unpack(msg.block_type, msg.block)
     check_block(block, peer)
   end)
   Bus.sub("message:receive:confirm_req", function(ok, msg, peer)
     if not ok then
       return log:warning("rainet: message:receive:confirm_req from %s failed: %s", peer, msg)
     end
-    local block = Block.new(msg.block_type, msg.block)
+    local block = Block.unpack(msg.block_type, msg.block)
     check_block(block, peer)
   end)
   Bus.sub("message:receive:confirm_ack", function(ok, msg, peer)
     if not ok then
       return log:warning("rainet: message:receive:confirm_ack from %s failed: %s", peer, msg)
     end
-    local block = Block.new(msg.block_type, msg.block)
-    check_block(block, peer)
+    local vote = Vote.new(msg)
+    if vote:verify() then
+      Bus.pub("vote:receive", vote, peer)
+      --log:debug("legit vote from %s", peer)
+    else
+      log:warn("invalid vote from %s, mate!!", peer)
+    end
   end)
 end
 
@@ -145,6 +151,8 @@ function Rainet.bulk_pull_accounts(frontier)
     end
   end
   
+  local account_frontier_score_delta = 1/#frontier
+  
   local ok, failed, errs = coroutine.workpool({
     work = frontier,
     retry = 4,
@@ -157,13 +165,17 @@ function Rainet.bulk_pull_accounts(frontier)
         accounts_failed = #work_failed
       }
       log:debug("bulk pull: using %i workers, finished %i of %i accounts [%3.2f] (%i failed)", active_workers, #work_done, frontier_size, 100 * #work_done / frontier_size, #work_failed)
+      for peer, stats in pairs(active_peers) do
+          log:debug("bulk pull:  %5d/sec frontiers (%7d total) [%5.2f%%] from %s", stats.rate or 0, (stats.total or 0), (stats.progress or 0) * 100, peer)
+        end
+      
       Bus.pub("bulk_pull:progress", bus_data)
     end,
     worker = function(acct_frontier)
       local peer = getpeer()
-      active_peers[peer] = {frontier = acct_frontier, blockes_pulled = 0}
+      active_peers[peer] = {frontier = acct_frontier, blocks_pulled = 0}
       local prev_blocks = 0
-      local acct_blocks, err = Account.bulk_pull(acct_frontier, peer, function(blocks_so_far)
+      local acct_blocks, frontier_hash_found_or_err = Account.bulk_pull(acct_frontier, peer, function(blocks_so_far)
         local blocks_fetched = #blocks_so_far - prev_blocks
         prev_blocks = #blocks_so_far
         total_blocks_fetched = total_blocks_fetched + blocks_fetched
@@ -174,7 +186,20 @@ function Rainet.bulk_pull_accounts(frontier)
         end
       end)
       active_peers[peer]=nil
-      return acct_blocks, err
+      if acct_blocks then
+        if frontier_hash_found_or_err then
+          --all right!
+          peer:update_bootstrap_score(account_frontier_score_delta)
+        else
+          --assume it's the peer's fault we didn't find the frontier hash
+          -- ATTACK VECTOR: this assumes we trust the frontier, which means an attacker
+          -- that poisons the frontier will eventually gain bootstrap-score over legit peers
+          peer:update_bootstrap_score(-0.1 * account_frontier_score_delta)
+        end
+        return {peer = peer, frontier = acct_frontier, blocks = acct_blocks, frontier_found = frontier_hash_found_or_err}
+      else
+        peer:update_bootstrap_score(-account_frontier_score_delta)
+      end
     end
   })
   

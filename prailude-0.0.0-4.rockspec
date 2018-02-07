@@ -96,7 +96,8 @@ build = {
     ["prailude.db.sqlite.frontier"]="src/db/sqlite/frontierdb.lua",
     ["prailude.db.sqlite.account"] ="src/db/sqlite/accountdb.lua",
     ["prailude.db.sqlite.kv"] =     "src/db/sqlite/kvdb.lua", --key/value store
-    
+
+    ["prailude.vote"] =       "src/models/vote.lua",
     ["prailude.message"] =    "src/models/message.lua",
     ["prailude.peer"] =       "src/models/peer.lua",
     ["prailude.TCPsession"] = "src/models/TCPSession.lua",
