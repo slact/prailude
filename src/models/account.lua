@@ -54,6 +54,7 @@ function Account.bulk_pull(frontier, peer, watchdog)
   local function watchdog_wrapper()
     return watchdog(blocks_so_far)
   end
+  local frontier_hash_found = false
   
   return peer:tcp_session("bulk pull", function(tcp)
     tcp:write(bulk_pull_message:pack())
@@ -63,20 +64,32 @@ function Account.bulk_pull(frontier, peer, watchdog)
       if not fresh_blocks then -- there was an error
         return nil, "error unpacking bulk blocks: " .. tostring(leftovers_or_err)
       elseif not done then
-        --got some new blocks
-        for _, block in pairs(fresh_blocks) do
-          table.insert(blocks_so_far, Block.get(block))
-        end
-        if leftovers_or_err and #leftovers_or_err > 0 then
-          tcp.buf:push(leftovers_or_err)
+        --got some new blocks?
+        if #fresh_blocks == 0 then --nope, no blocks here
+          --pull failed?
+          return nil, "account pull produced 0 blocks"
+        else
+          local block
+          for _, rawblock in ipairs(fresh_blocks) do
+            block = Block.get(rawblock)
+            if not frontier_hash_found and block.hash == frontier.hash then
+              frontier_hash_found = true
+            end
+            table.insert(blocks_so_far, Block.get(block))
+          end
+          if leftovers_or_err and #leftovers_or_err > 0 then
+            tcp.buf:push(leftovers_or_err)
+          end
         end
       else
-        log:debug("finished getting blocks for %s (%7d total) from %s", Account.to_readable(frontier.account), #blocks_so_far, peer)
-        -- no more frontiers here
-        return blocks_so_far
+        break
       end
-      
     end
+    
+    log:debug("finished getting blocks for %s (%7d total) from %s", Account.to_readable(frontier.account), #blocks_so_far, peer)
+    -- no more blocks here
+    return blocks_so_far, frontier_hash_found
+    
   end, watchdog_wrapper)
 end
 
