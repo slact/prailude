@@ -3,17 +3,19 @@ local log = require "prailude.log"
 local Block = require "prailude.block"
 local Account = require "prailude.account"
 local verify_sig = require "prailude.util".ed25519.verify
+local batch_verify_sig = require "prailude.util".ed25519.batch_verify
 local blake2b_hash = require "prailude.util".blake2b.hash
 
 local Vote = {}
 
 local Vote_meta = { __index = {
-  verify = function(self)
+  verify = function(self, opt)
     local valid = self.valid
     if valid ~= nil then
       return valid
     else
-      valid = verify_sig(self.hash, self.signature, self.account.id)
+      local verify = (opt == "batch") and batch_verify_sig or verify_sig
+      valid = verify(self.hash, self.signature, self.account.id)
       self.valid = valid or false
       return valid
     end

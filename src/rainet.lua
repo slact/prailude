@@ -13,7 +13,7 @@ local Vote = require "prailude.vote"
 local uv = require "luv"
 local mm = require "mm"
 local coroutine = require "prailude.util.coroutine"
-
+local bytes_to_hex = require "prailude.util".bytes_to_hex
 local Rainet = {}
 
 local function keepalive()
@@ -103,13 +103,15 @@ local function handle_blocks()
     if not ok then
       return log:warning("rainet: message:receive:confirm_ack from %s failed: %s", peer, msg)
     end
-    local vote = Vote.new(msg)
-    if vote:verify() then
-      Bus.pub("vote:receive", vote, peer)
-      --log:debug("legit vote from %s", peer)
-    else
-      log:warn("invalid vote from %s, mate!!", peer)
-    end
+    coroutine.wrap(function()
+      local vote = Vote.new(msg)
+      if vote:verify() then
+        Bus.pub("vote:receive", vote, peer)
+        --log:debug("legit vote from %s", peer)
+      else
+        log:warn("invalid vote from %s acct %s block %s, mate!!", peer, vote.account, bytes_to_hex(vote.block.hash))
+      end
+    end)()
   end)
 end
 
