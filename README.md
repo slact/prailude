@@ -15,7 +15,7 @@ There's still a lot of work to do, but much has also been completed. **BONUS** l
 
 * Node
   * Data storage - **DONE**  
-    I've chosen to use Sqlite3 as the data store. The db logic is entirely encapsulated and can be swapped for something more performand later if necessary.
+    I've chosen to use Sqlite3 as the data store. The db logic is entirely encapsulated and can be swapped for something more performant later if necessary.
   * Crypto - **DONE**  
     All crypto primitives are implemented. The most efficient implementation of ed25519 -- `Ed25519-donna` is used.
     * **BONUS** Batch signature verification - **DONE**  
