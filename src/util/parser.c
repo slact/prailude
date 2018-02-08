@@ -1008,11 +1008,7 @@ static int prailude_pack_block(lua_State *L) {
   char               buf[512];
   size_t             len;
   rai_block_type_t   blocktype;
-#if LUA_VERSION_NUM > 501
   luaL_checktype(L, 1, LUA_TTABLE);
-#else
-  lua_checktype(L, 1, LUA_TTABLE);
-#endif
   lua_getfield(L, 1, "typecode");
   lua_pushvalue(L, 1); 
   lua_call(L, 1, 1); //block:typecode()
