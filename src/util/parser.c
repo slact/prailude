@@ -163,6 +163,9 @@ static size_t message_header_pack(lua_State *L, int message_table_index, rai_msg
     case 'm'://[m]ainnet
       header->net = RAI_MAINNET;
       break;
+    default:
+      *err = "unexpected raiblocks network (not test/beta/main)";
+      return 0;
   }
   lua_pop(L, 1);
   
@@ -312,6 +315,7 @@ static size_t message_header_decode(rai_msg_header_t *hdr, const char *buf, size
   
   if(buf[1] < 'A' || buf[1] > 'C') {
     *errstr = "Invalid header network-type byte";
+    return 0;
   }
   else {
     hdr->net = buf[1]-'A';
@@ -675,6 +679,9 @@ static size_t block_decode_raw(rai_block_type_t blocktype, lua_State *L, const c
     case RAI_BLOCK_NOT_A_BLOCK:
       *err = "tried to unpack 'not_a_block' type block";
       return 0;
+    default:
+      *err = "tried to unpack unknown type block";
+      return 0;
   }
   if(sz < buflen) {
     return 0; //need moar bytes
@@ -739,6 +746,9 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       return 0;
     case RAI_BLOCK_NOT_A_BLOCK:
       *err = "tried to unpack 'not_a_block' type block";
+      return 0;
+    default:
+      *err = "tried to unpack unknown type block";
       return 0;
   }
   lua_rawsetfield_string_scanbuf(L, -1, "raw",     buf_start, buf - buf_start);
@@ -928,7 +938,7 @@ static int prailude_pack_frontiers(lua_State *L) {
 }
 
 static int prailude_unpack_bulk(lua_State *L) {
-  size_t           sz, bytes_read;
+  size_t           sz, bytes_read = 0;
   const char      *buf = luaL_checklstring(L, 1, &sz);
   const char      *end = &buf[sz];
   const char      *cur = buf;
