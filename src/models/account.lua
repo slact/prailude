@@ -20,7 +20,11 @@ local Account_meta = { __index = {
     Account.update(self, "balance")
     return self
   end
-}}
+},
+__tostring = function(self)
+  return Account.to_readable(self.id)
+end
+}
 
 function Account.new(id, frontier)
   local data
