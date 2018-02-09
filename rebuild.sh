@@ -10,6 +10,7 @@ _clang="clang -Qunused-arguments -fcolor-diagnostics"
 #clang_memcheck="-fsanitize=address,undefined -fno-omit-frame-pointer"
 clang_sanitize_memory="-use-gold-plugins -fsanitize=memory -fsanitize-memory-track-origins -fno-omit-frame-pointer -fsanitize-blacklist=bl.txt"
 clang_sanitize_addres="-fsanitize=address,undefined -fno-omit-frame-pointer"
+export  PATH="/usr/lib/ccache/bin/:$PATH"
 
 optimize_level=0;
 
