@@ -47,7 +47,7 @@ for opt in $*; do
       FSANITIZE_UNDEFINED=1
       ;;
     callgrind|profile)
-      VALGRIND_OPT=( "--tool=callgrind" "--collect-jumps=yes"  "--collect-systime=yes" "--branch-sim=yes" "--cache-sim=yes" "--simulate-hwpref=yes" "--simulate-wb=yes" "--callgrind-out-file=callgrind-nginx-%p.out")
+      VALGRIND_OPT=( "--tool=callgrind" "--collect-jumps=yes"  "--collect-systime=yes" "--branch-sim=yes" "--cache-sim=yes" "--simulate-hwpref=yes" "--simulate-wb=yes" "--callgrind-out-file=callgrind-prailude-%p.out")
       valgrind=1;;
     helgrind)
     VALGRIND_OPT=( "--tool=helgrind" "--free-is-write=yes")
