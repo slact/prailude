@@ -67,6 +67,10 @@ local PeerDB_meta = {__index = {
     return self
   end,
   
+  get_best_bootstrap_peer = function()
+    
+  end,
+  
   get_fastest_ping = function(n)
     peer_get_fastest_ping:bind(1, n or 1)
     local peers = {}
