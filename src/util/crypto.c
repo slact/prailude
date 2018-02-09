@@ -246,6 +246,73 @@ static int lua_edDSA_blake2b_verify(lua_State *L) { //message, signature, pubkey
   return 1;
 }
 
+#define ED25519_MAX_BATCH_SIZE 64
+
+static int lua_edDSA_blake2b_batch_verify(lua_State *L) { //{{message, signature, pubkey}, ...}
+  const unsigned char     *msg[ED25519_MAX_BATCH_SIZE];
+  size_t                   msglen[ED25519_MAX_BATCH_SIZE];
+  const unsigned char     *pubkey[ED25519_MAX_BATCH_SIZE];
+  const unsigned char     *signature[ED25519_MAX_BATCH_SIZE];
+  int                      valid[ED25519_MAX_BATCH_SIZE];
+  int                      batchsize;
+  int                      all_valid, i;
+  size_t                   sz;
+#if LUA_VERSION_NUM > 501
+  batchsize = lua_rawlen(L, 1);
+#else
+  batchsize = lua_objlen(L, 1);
+#endif  
+  if(batchsize > ED25519_MAX_BATCH_SIZE) {
+    return luaL_error(L, "ed25519_batch_verify batch size cannot exceed 64");
+  }
+  
+  for(i=0; i < batchsize; i++) {
+    lua_rawgeti(L, 1, i+1);
+    
+    //message
+    lua_rawgeti(L, -1, 1);
+    msg[i] = (const unsigned char *)luaL_checklstring(L, -1, &msglen[i]);
+    lua_pop(L, 1);
+    
+    //sig
+    lua_rawgeti(L, -1, 2);
+    signature[i] = (const unsigned char *)luaL_checklstring(L, -1, &sz);
+    if(sz != 64)  {
+      return luaL_error(L, "sig must be length 64, instead it's %i", sz);
+    }
+    lua_pop(L, 1);
+    
+    //pubkey
+    lua_rawgeti(L, -1, 3);
+    pubkey[i] = (const unsigned char *)luaL_checklstring(L, -1, &sz);
+    if(sz != 32)  {
+      return luaL_error(L, "pubkey must be length 32, instead it's %i", sz);
+    }
+    lua_pop(L, 1);
+    
+    
+    
+    lua_pop(L, 1);
+  }
+  
+  all_valid = 0 == ed25519_sign_open_batch(msg, msglen, pubkey, signature, batchsize, valid);
+  if(all_valid) {
+    lua_pushboolean(L, 1);
+    return 1;
+  }
+  else {
+    for(i=0; i< batchsize; i++) {
+      lua_rawgeti(L, 1, i+1);
+      lua_pushliteral(L, "valid");
+      lua_pushboolean(L, valid[i]);
+      lua_rawset(L, 2);
+      lua_pop(L, 1);
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+  }
+}
+
 #define kdf_full_work (64 * 1024)
 #define kdf_test_work 8
 
@@ -301,6 +368,7 @@ static const struct luaL_Reg prailude_crypto_functions[] = {
   { "edDSA_blake2b_get_public_key", lua_edDSA_blake2b_get_public_key },
   { "edDSA_blake2b_sign",           lua_edDSA_blake2b_sign },
   { "edDSA_blake2b_verify",         lua_edDSA_blake2b_verify },
+  { "edDSA_blake2b_batch_verify",   lua_edDSA_blake2b_batch_verify },
   
   {"argon2d_raiblocks_hash",        lua_argon2d_raiblocks_hash },
   
