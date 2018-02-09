@@ -43,6 +43,13 @@ function Control.run()
     bus.pub("run")
   end)
   
+  local sigint = assert(uv.new_signal())
+  sigint:start("sigint", function()
+    log:debug("prailude: shutting down")
+    sigint:close()
+    uv.stop()
+  end)
+  --[[
   Timer.delay(1000, function()
     Rainet.bootstrap()
   end)
@@ -54,8 +61,10 @@ function Control.run()
   until uv.run("once") == false
   uv.loop_close()
   ]]
-  
+  log:debug("prailude: entering main loop")
   uv.run()
+  uv.loop_close()
+  bus.pub("shutdown")
 end
 
 return Control
