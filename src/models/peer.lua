@@ -10,6 +10,13 @@ local Peer
 
 local known_peers = {}
 
+local function tcp_session_end(self, ...)
+  --a little lua vararg magic
+  self.tcp_in_use=0
+  Peer.update_num_field(self, "tcp_in_use")
+  return ...
+end
+
 local Peer_instance = {
   send = function(self, message)
     local ret, err = server.send(message, self)
@@ -22,16 +29,26 @@ local Peer_instance = {
   tcp_session = function(self, session_name, session, heartbeat)
     local coro = coroutine.running()
     assert(coro, "tcp_session expects to be called in a coroutine")
-    return TCPSession.get(self):run(session_name, session, heartbeat)
+    self.tcp_in_use=1
+    Peer.update_num_field(self, "tcp_in_use")
+    return tcp_session_end(self, TCPSession.get(self):run(session_name, session, heartbeat))
   end,
   
   update_timestamp = function(self, what)
     local field = "last_"..what
     local prev_val = rawget(self, field)
     rawset(self, field, gettime())
-    Peer.update_timestamp_field(self, field, prev_val)
+    Peer.update_num_field(self, field, prev_val)
     return self
-  end
+  end,
+  
+  update_bootstrap_score = function(self, delta)
+    if delta then
+      rawset(self, "bootstrap_score", (rawget(self, "bootstrap_score") or 0) + delta)
+    end
+    Peer.update_num_field(self, "bootstrap_score")
+    return self
+  end,
 }
 local peer_meta = {
   __index=Peer_instance,
