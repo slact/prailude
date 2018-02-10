@@ -29,12 +29,6 @@ function DB.shutdown()
     if subdb.shutdown then
       subdb.shutdown()
     end
-  end,
-  
-  shutdown = function()
-    for _, subdb in ipairs(subdbs) do
-      subdb.shutdown()
-    end
   end
 end
 
