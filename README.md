@@ -61,4 +61,6 @@ There's still a lot of work to do, but much has also been completed. **BONUS** l
       Enables realtime tracking of data.
     * GUI Wallet  
       Write an Electron app (sorry, i know it's a bloat, but I don't have time to learn Qt) or use Canoe.
+  **BONUS** Named Accounts  
+    Unique, decentralized, distributed account naming system, built by thoroughly reusing the Nano protocol with a slightly different DAG validation scheme. I've already worked out most of the details, and this is readily possible. In order for this system to go live, however, most representatives would need to run a supporting rep node.
   
