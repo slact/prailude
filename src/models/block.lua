@@ -3,6 +3,7 @@
 local Util = require "prailude.util"
 local Balance = require "prailude.util.balance"
 local verify_block_PoW = Util.work.verify
+local generate_block_PoW = Util.work.generate
 local verify_block_PoW_test = Util.work.verify_test
 local blake2b_hash = Util.blake2b.hash
 local verify_edDSA_blake2b_signature = Util.ed25519.verify
@@ -71,9 +72,16 @@ local Block_instance = {
   verify_test_PoW = function(self)
     return verify_block_PoW_test(self:PoW_hashable(), self.work)
   end,
-  verify_signature = function(self)
+  generate_PoW = function(self)
+    local pow = generate_block_PoW(self:PoW_hashable())
+    self.work = pow
+    return pow
+  end,
+  verify_signature = function(self, account_raw)
     if self.type == "open" then
       return verify_edDSA_blake2b_signature(self.hash, self.signature, self.account)
+    elseif account_raw then
+      return verify_edDSA_blake2b_signature(self.hash, self.signature, account_raw)
     else
       return true -- for now
       --error("not implemented yet")

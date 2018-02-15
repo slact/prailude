@@ -116,23 +116,71 @@ static int lua_blake2b_hash(lua_State *L) {
 static uint64_t const publish_test_threshold = 0xff00000000000000;
 static uint64_t const publish_full_threshold = 0xffffffc000000000;
 
-static int raiblocks_work_verify(lua_State *L, uint64_t threshold) {
+static uint64_t xor_state[1];
+static inline uint64_t xorshift64star(void) {
+  uint64_t x = xor_state[0];	/* The state must be seeded with a nonzero value. */
+  x ^= x >> 12; // a
+  x ^= x << 25; // b
+  x ^= x >> 27; // c
+  xor_state[0] = x;
+  return x * 0x2545F4914F6CDD1D;
+}
+
+static int raiblocks_internal_work_verify(const char *block_hashable, size_t hashable_len, const char *work, uint64_t threshold) {
   uint64_t            result;
   
+  blake2b_state       state;
+  
+  blake2b_init(&state, sizeof(result));
+  blake2b_update(&state, work, 8);
+  blake2b_update(&state, block_hashable, hashable_len);
+  blake2b_final(&state, &result, sizeof(result));
+  
+  int i;
+  unsigned char *in;
+  in=(unsigned char *)work;
+  printf("\nwork\n");
+  for(i=0; i<8; i++) {
+    printf("%02x", in[i]);
+  }
+  printf("\nhashable\n");
+  in=(unsigned char *)block_hashable;
+  for(i=0; i<hashable_len ; i++) {
+    printf("%02x", in[i]);
+  }
+  printf("\nresult\n");
+  in=(unsigned char *)&result;
+  for(i=0; i<8 ; i++) {
+    printf("%02x", in[i]);
+  }
+  printf("\nEND\n");
+  
+  return result >= threshold;
+}
+
+static int raiblocks_generate_proof_of_work(lua_State *L, uint64_t threshold) {
+  size_t        hashable_len;
+  uint64_t      pow;
+  const char   *block_hashable = luaL_checklstring(L, 1, &hashable_len);
+  do {
+    pow = xorshift64star();
+  } while(!raiblocks_internal_work_verify(block_hashable, hashable_len, (const char *)&pow, threshold));
+  
+  lua_pushlstring(L, (const char *)&pow, 8);
+  return 1;
+}
+
+static int raiblocks_work_verify(lua_State *L, uint64_t threshold) {
   size_t              len;
   const char         *work, *block_hashable;
-  blake2b_state       state;
   work = luaL_checklstring(L, 2, &len);
   if(len != 8) {
     return luaL_error(L, "wrong length work value");
   }
   block_hashable = luaL_checklstring(L, 1, &len);
   
-  blake2b_init(&state, sizeof(result));
-  blake2b_update(&state, work, 8);
-  blake2b_update(&state, block_hashable, len);
-  blake2b_final(&state, &result, sizeof(result));
-  return result >= threshold;
+  
+  return raiblocks_internal_work_verify(block_hashable, len, work, threshold);
 }
 
 static int lua_raiblocks_work_verify_test(lua_State *L) {
@@ -141,6 +189,11 @@ static int lua_raiblocks_work_verify_test(lua_State *L) {
 }
 static int lua_raiblocks_work_verify_full(lua_State *L) {
   lua_pushboolean(L, raiblocks_work_verify(L, publish_full_threshold));
+  return 1;
+}
+
+static int lua_raiblocks_generate_proof_of_work_full(lua_State *L) {
+  raiblocks_generate_proof_of_work(L, publish_full_threshold);
   return 1;
 }
 
@@ -364,6 +417,7 @@ static const struct luaL_Reg prailude_crypto_functions[] = {
   
   { "raiblocks_verify_test_work", lua_raiblocks_work_verify_test },
   { "raiblocks_verify_work", lua_raiblocks_work_verify_full },
+  { "raiblocks_generate_work", lua_raiblocks_generate_proof_of_work_full },
   
   { "edDSA_blake2b_get_public_key", lua_edDSA_blake2b_get_public_key },
   { "edDSA_blake2b_sign",           lua_edDSA_blake2b_sign },
@@ -383,6 +437,7 @@ int luaopen_prailude_util_crypto(lua_State* lua) {
   luaL_register(lua, NULL, prailude_crypto_functions);
 #endif
   
+  xor_state[0] = 999234;
   //initialize crappy PRNG for bulk ed25519 verification
   raninit(&rng_ctx, 1); // WTF KIND OF SEED IS THAT?!
   

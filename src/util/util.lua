@@ -80,6 +80,7 @@ local util = {
   work = {
     verify = crypto.raiblocks_verify_work,
     verify_test = crypto.raiblocks_verify_work,
+    generate = crypto.raiblocks_generate_work
   },
   
   argon2d_hash = crypto.argon2d_raiblocks_hash,
