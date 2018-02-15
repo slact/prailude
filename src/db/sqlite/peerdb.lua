@@ -2,8 +2,9 @@ local sqlite3 = require "lsqlite3"
 local log = require "prailude.log"
 local Peer
 
-local schema = [[
-  CREATE %s IF NOT EXISTS %s (
+local schema = function(tbl_type, tbl_name)
+  return [[
+  CREATE ]] .. tbl_type .. [[ IF NOT EXISTS ]] .. tbl_name .. [[ (
     address                  TEXT,
     port                     INTEGER,
     last_received            REAL,
@@ -15,14 +16,16 @@ local schema = [[
     bootstrap_score          REAL NOT NULL DEFAULT 0,
     PRIMARY KEY(address, port)
   ) WITHOUT ROWID;
-  CREATE INDEX IF NOT EXISTS peer_last_received_idx           ON peers (last_received);
-  CREATE INDEX IF NOT EXISTS peer_last_sent_idx               ON peers (last_sent);
-  CREATE INDEX IF NOT EXISTS peer_last_keepalive_sent_idx     ON peers (last_keepalive_sent);
-  CREATE INDEX IF NOT EXISTS peer_last_keepalive_received_idx ON peers (last_keepalive_received);
-  CREATE INDEX IF NOT EXISTS peer_ping_idx                    ON peers (ping);
-  CREATE INDEX IF NOT EXISTS peer_tcp_in_use_idx              ON peers (tcp_in_use);
-  CREATE INDEX IF NOT EXISTS peer_bootstrap_score_idx         ON peers (bootstrap_score);
+  CREATE INDEX IF NOT EXISTS peer_last_received_idx           ON ]] .. tbl_name .. [[ (last_received);
+  CREATE INDEX IF NOT EXISTS peer_last_sent_idx               ON ]] .. tbl_name .. [[ (last_sent);
+  CREATE INDEX IF NOT EXISTS peer_last_keepalive_sent_idx     ON ]] .. tbl_name .. [[ (last_keepalive_sent);
+  CREATE INDEX IF NOT EXISTS peer_last_keepalive_received_idx ON ]] .. tbl_name .. [[ (last_keepalive_received);
+  CREATE INDEX IF NOT EXISTS peer_ping_idx                    ON ]] .. tbl_name .. [[ (ping);
+  CREATE INDEX IF NOT EXISTS peer_tcp_in_use_idx              ON ]] .. tbl_name .. [[ (tcp_in_use);
+  CREATE INDEX IF NOT EXISTS peer_bootstrap_score_idx         ON ]] .. tbl_name .. [[ (bootstrap_score);
 ]]
+
+end
 
 local db
 
@@ -146,8 +149,8 @@ return {
     Peer = require "prailude.peer"
     db = shared_db
     
-    assert(db:exec(schema:format("TABLE", "stored_peers")) == sqlite3.OK, db:errmsg())
-    assert(db:exec(schema:format("TEMPORARY TABLE", "peers")) == sqlite3.OK, db:errmsg())
+    assert(db:exec(schema("TABLE", "stored_peers")) == sqlite3.OK, db:errmsg())
+    assert(db:exec(schema("TEMPORARY TABLE", "peers")) == sqlite3.OK, db:errmsg())
     
     --copy previously known peers
     assert(db:exec("INSERT INTO peers SELECT * FROM stored_peers") == sqlite3.OK, db:errmsg())
