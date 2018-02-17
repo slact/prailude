@@ -67,25 +67,27 @@ function Account.bulk_pull(frontier, peer, watchdog)
       fresh_blocks, leftovers_or_err, done = Parser.unpack_bulk(tcp.buf:flush())
       if not fresh_blocks then -- there was an error
         return nil, "error unpacking bulk blocks: " .. tostring(leftovers_or_err)
-      elseif not done then
+      else
         --got some new blocks?
-        if #fresh_blocks == 0 then --nope, no blocks here
+        if not done and #fresh_blocks == 0 then --nope, no blocks here
           --pull failed?
           return nil, "account pull produced 0 blocks"
         else
           local block
           for _, rawblock in ipairs(fresh_blocks) do
-            block = Block.get(rawblock)
+            --mm(rawblock)
+            block = assert(Block.get(rawblock))
             if not frontier_hash_found and block.hash == frontier.hash then
               frontier_hash_found = true
             end
-            table.insert(blocks_so_far, Block.get(block))
+            table.insert(blocks_so_far, block)
           end
           if leftovers_or_err and #leftovers_or_err > 0 then
             tcp.buf:push(leftovers_or_err)
           end
         end
-      else
+      end
+      if done then
         break
       end
     end
