@@ -49,7 +49,7 @@ function Control.run()
     sigint:close()
     uv.stop()
   end)
-  --[[
+  
   Timer.delay(1000, function()
     Rainet.bootstrap()
   end)
