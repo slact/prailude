@@ -54,7 +54,9 @@ for opt in $*; do
     Og)
       optimize_level=g;;
     clang-analyzer|analyzer|scan|analyze)
-      export CC="clang"
+      #export CC="clang"
+      #export CLINKER=$clang
+      #export CFLAGS="-ferror-limit=5 $CFLAGS -Wconditional-uninitialized"
       export CLANG_ANALYZER=$MY_PATH/clang-analyzer
       mkdir $CLANG_ANALYZER 2>/dev/null
       ;;
@@ -66,4 +68,9 @@ export CFLAGS="$CFLAGS -Wall -O$optimize_level -ggdb -fno-omit-frame-pointer -fP
 pushd src
 luacheck ./ || exit 1
 popd
-sudo $luarocks CC="$CC" CFLAGS="$CFLAGS" make
+if [[ -z $CLANG_ANALYZER ]]; then
+  sudo $luarocks CC="$CC" CFLAGS="$CFLAGS" make
+else
+  export CC="clang"
+  sudo scan-build -o "$CLANG_ANALYZER" $luarocks CC="/usr/lib/clang/ccc-analyzer" CFLAGS="$CFLAGS" LD="/usr/lib/clang/ccc-analyzer" make
+fi
