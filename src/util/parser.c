@@ -866,7 +866,7 @@ static int prailude_unpack_frontiers(lua_State *L) {
   size_t      sz;
   const char *buf = luaL_checklstring(L, 1, &sz);
   const char *end = &buf[sz];
-  const char *cur = buf;
+  const char *cur;
   int         i = 0;
   int         done = 0;
   const char *last_acct = NULL;
@@ -942,7 +942,7 @@ static int prailude_unpack_bulk(lua_State *L) {
   const char      *buf = luaL_checklstring(L, 1, &sz);
   const char      *end = &buf[sz];
   const char      *cur = buf;
-  const char      *err;
+  const char      *err = NULL;
   int              n = 0, done = 0;
   rai_block_type_t blocktype;
   
