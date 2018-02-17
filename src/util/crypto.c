@@ -135,7 +135,7 @@ static int raiblocks_internal_work_verify(const char *block_hashable, size_t has
   blake2b_update(&state, work, 8);
   blake2b_update(&state, block_hashable, hashable_len);
   blake2b_final(&state, &result, sizeof(result));
-  
+  /*
   int i;
   unsigned char *in;
   in=(unsigned char *)work;
@@ -154,7 +154,7 @@ static int raiblocks_internal_work_verify(const char *block_hashable, size_t has
     printf("%02x", in[i]);
   }
   printf("\nEND\n");
-  
+  */
   return result >= threshold;
 }
 
