@@ -11,10 +11,18 @@ local Rainet = require "prailude.rainet"
 local Timer = require "prailude.util.timer"
 local DB = require "prailude.db"
 
+local initialized = false
+
 function Control.initialize()
+  if initialized then
+    log:debug("already initialized")
+    return nil, "already initialized"
+  end
   DB.initialize("sqlite")
   Server.initialize()
   Rainet.initialize()
+  initialized = true
+  return true
 end
 
 --[[
@@ -37,12 +45,17 @@ function Control.be_nice_to_event_loop(func)
 end
 ]]
 
-function Control.run()
+function Control.run(runfunc)
+  if not initialized then
+    Control.initialize()
+  end
+  
   --do some other stuff maybe
   Timer.delay(0, function()
     bus.pub("run")
   end)
   
+  --SIGINT handler
   local sigint = assert(uv.new_signal())
   sigint:start("sigint", function()
     log:debug("prailude: shutting down")
@@ -50,9 +63,17 @@ function Control.run()
     uv.stop()
   end)
   
-  Timer.delay(1000, function()
-    Rainet.bootstrap()
-  end)
+  if runfunc == nil then
+    runfunc = Rainet.bootstrap
+  else
+    if type(runfunc) == "function" then
+      Timer.delay(1, runfunc)
+    else
+      assert("Don't know what to do with " .. type(runfunc) .. " parameter")
+    end
+  end
+  
+  Timer.delay(1000, runfunc)
   
   --[[
   repeat

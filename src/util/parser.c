@@ -532,7 +532,16 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
         return 0;
       }
       buf += lua_table_field_fixedsize_string_encode(L, -1, "account",     buf, 32); //start_account
-      buf += lua_table_field_fixedsize_string_encode(L, -1, "hash",        buf, 32); //end block hash
+      lua_rawgetfield(L, -1, "hash");
+      if(lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        memset(buf, '\0', 32);
+        buf += 32;
+      }
+      else {
+        lua_pop(L, 1);
+        buf += lua_table_field_fixedsize_string_encode(L, -1, "hash",        buf, 32); //end block hash
+      }
       break;
     case RAI_MSG_BULK_PUSH:
       //nothing to do, this is an empty message (the data follows the message)
@@ -680,6 +689,7 @@ static size_t block_decode_raw(rai_block_type_t blocktype, lua_State *L, const c
       *err = "tried to unpack 'not_a_block' type block";
       return 0;
     default:
+      raise(SIGSTOP);
       *err = "tried to unpack unknown type block";
       return 0;
   }
@@ -748,6 +758,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       *err = "tried to unpack 'not_a_block' type block";
       return 0;
     default:
+      raise(SIGSTOP);
       *err = "tried to unpack unknown type block";
       return 0;
   }
@@ -965,6 +976,7 @@ static int prailude_unpack_bulk(lua_State *L) {
       bytes_read = block_decode_unpack(blocktype, L, cur, end - cur, &err);
       cur += bytes_read;
       if(bytes_read == 0) {
+        cur--; //rewind to include block type
         break;
       }
       else {

@@ -13,7 +13,7 @@ local Vote = require "prailude.vote"
 local uv = require "luv"
 local mm = require "mm"
 local coroutine = require "prailude.util.coroutine"
-local bytes_to_hex = require "prailude.util".bytes_to_hex
+--local bytes_to_hex = require "prailude.util".bytes_to_hex
 local Rainet = {}
 
 local function keepalive()
@@ -49,9 +49,9 @@ local function keepalive()
   --keepalive parsing and response
   Bus.sub("message:receive:keepalive", function(ok, msg, peer)
     if not ok then
-      return log:warning("rainet: message:receive:keepalive failed from peer %s: %s", peer, msg)
+      return log:warn("rainet: message:receive:keepalive failed from peer %s: %s", peer, msg)
     end
-    peer:update_timestamp("keepalive_received")
+    peer:update_keepalive_ping()
     local inpeer
     local now = os.time()
     local keepalive_cutoff = now - Peer.keepalive_interval
@@ -87,29 +87,29 @@ local function handle_blocks()
   end
   Bus.sub("message:receive:publish", function(ok, msg, peer)
     if not ok then
-      return log:warning("rainet: message:receive:publish from %s failed: %s", peer, msg)
+      return log:warn("rainet: message:receive:publish from %s failed: %s", peer, msg)
     end
     local block = Block.unpack(msg.block_type, msg.block)
     check_block(block, peer)
   end)
   Bus.sub("message:receive:confirm_req", function(ok, msg, peer)
     if not ok then
-      return log:warning("rainet: message:receive:confirm_req from %s failed: %s", peer, msg)
+      return log:warn("rainet: message:receive:confirm_req from %s failed: %s", peer, msg)
     end
     local block = Block.unpack(msg.block_type, msg.block)
     check_block(block, peer)
   end)
   Bus.sub("message:receive:confirm_ack", function(ok, msg, peer)
     if not ok then
-      return log:warning("rainet: message:receive:confirm_ack from %s failed: %s", peer, msg)
+      return log:warn("rainet: message:receive:confirm_ack from %s failed: %s", peer, msg)
     end
     coroutine.wrap(function()
       local vote = Vote.new(msg)
       if vote:verify() then
         Bus.pub("vote:receive", vote, peer)
         --log:debug("legit vote from %s", peer)
-      else
-        log:warn("invalid vote from %s acct %s block %s, mate!!", peer, vote.account, bytes_to_hex(vote.block.hash))
+      --else
+      --  log:warn("invalid vote from %s acct %s block %s, mate!!", peer, vote.account, bytes_to_hex(vote.block.hash))
       end
     end)()
   end)
@@ -123,6 +123,18 @@ end
 
 function Rainet.bootstrap()
   return coroutine.wrap(function()
+    --let's gather some peers first. 50 active peers should be enough
+    local min_count, count = 50
+    while true do
+      count = Peer.get_active_count()
+      if count < min_count then
+        log:debug("bootstrap: gathering at least %i peers, have %i", min_count, count)
+        Timer.delay(1000)
+      else
+        break
+      end
+    end
+    
     local frontiers = Rainet.fetch_frontiers()
     
     for _, frontier in pairs(frontiers) do
@@ -134,29 +146,20 @@ function Rainet.bootstrap()
 end
 
 function Rainet.bulk_pull_accounts(frontier)
+  --print("now bulk_pull some accounts", #frontier)
   Account =  require "prailude.account"
-  local min_speed = 300 --blocks/sec
+  local min_speed = 3 --blocks/sec
   local active_peers = {}
   local frontier_size = #frontier
   local total_blocks_fetched = 0
   
-  local getpeer; do
-    local fastpeers = {}
-    getpeer = function()
-      local peer = table.remove(fastpeers)
-      if not peer then
-        fastpeers = Peer.get_fastest_ping(500)
-        return table.remove(fastpeers)
-      else
-        return peer
-      end
-    end
-  end
-  
   local account_frontier_score_delta = 1/#frontier
+  
+  local frontier_last_fetched_from_peer=setmetatable({}, {__mode="k"})
   
   local ok, failed, errs = coroutine.workpool({
     work = frontier,
+    max_workers = 100,
     retry = 4,
     progress = function(active_workers, work_done, _, work_failed)
       local bus_data = {
@@ -166,41 +169,63 @@ function Rainet.bulk_pull_accounts(frontier)
         accounts_fetched = #work_done,
         accounts_failed = #work_failed
       }
-      log:debug("bulk pull: using %i workers, finished %i of %i accounts [%3.2f] (%i failed)", active_workers, #work_done, frontier_size, 100 * #work_done / frontier_size, #work_failed)
-      for peer, stats in pairs(active_peers) do
-          log:debug("bulk pull:  %5d/sec frontiers (%7d total) [%5.2f%%] from %s", stats.rate or 0, (stats.total or 0), (stats.progress or 0) * 100, peer)
-        end
+      log:debug("bulk pull: using %i workers, finished %i of %i accounts [%3.2f%%] (%i blocks) (%i failed attempts)", active_workers, #work_done, frontier_size, 100 * #work_done / frontier_size, total_blocks_fetched, #work_failed)
       
       Bus.pub("bulk_pull:progress", bus_data)
     end,
     worker = function(acct_frontier)
-      local peer = getpeer()
+      local peer = assert(Peer.get_best_bootstrap_peer())
       active_peers[peer] = {frontier = acct_frontier, blocks_pulled = 0}
-      local prev_blocks = 0
+      frontier_last_fetched_from_peer[acct_frontier] = peer
+      local prev_blocks, slow_in_a_row = 0, 0
       local acct_blocks, frontier_hash_found_or_err = Account.bulk_pull(acct_frontier, peer, function(blocks_so_far)
+        --print(tostring(peer), #blocks_so_far, prev_blocks)
         local blocks_fetched = #blocks_so_far - prev_blocks
         prev_blocks = #blocks_so_far
-        total_blocks_fetched = total_blocks_fetched + blocks_fetched
         if blocks_fetched < min_speed then -- too slow
-          return false, "account pull too slow"
+          if slow_in_a_row > 2 then
+            return false, "account pull too slow"
+          else
+            slow_in_a_row = slow_in_a_row + 1
+          end
         else
           active_peers[peer].blocks_pulled = blocks_so_far
         end
       end)
+      
+      --print("bulk   pull... done")
       active_peers[peer]=nil
       if acct_blocks then
         if frontier_hash_found_or_err then
           --all right!
+          total_blocks_fetched = total_blocks_fetched + #acct_blocks
           peer:update_bootstrap_score(account_frontier_score_delta)
+          --print("upgrade")
         else
           --assume it's the peer's fault we didn't find the frontier hash
           -- ATTACK VECTOR: this assumes we trust the frontier, which means an attacker
           -- that poisons the frontier will eventually gain bootstrap-score over legit peers
-          peer:update_bootstrap_score(-0.1 * account_frontier_score_delta)
+          --print("downgrade a little!")
+          --mm(acct_frontier)
+          --for i,b in pairs(acct_blocks) do
+          --  print(i, b.hash)
+          --end
+          
+          peer:update_bootstrap_score(-account_frontier_score_delta)
+          --print("peer", tostring(peer), "account found, but without frontier")
+          return nil, "account found, but without frontier"
         end
         return {peer = peer, frontier = acct_frontier, blocks = acct_blocks, frontier_found = frontier_hash_found_or_err}
       else
-        peer:update_bootstrap_score(-account_frontier_score_delta)
+        --print("peer", tostring(peer), frontier_hash_found_or_err)
+        if frontier_hash_found_or_err == "Connection refused" or frontier_hash_found_or_err == "No route to host" then
+          peer:update_bootstrap_score(-1)
+        elseif frontier_hash_found_or_err == "account pull too slow" then
+          peer:update_bootstrap_score(- 10 * account_frontier_score_delta)
+        else
+          peer:update_bootstrap_score(-account_frontier_score_delta)
+        end
+        return nil, frontier_hash_found_or_err
       end
     end
   })
@@ -214,7 +239,7 @@ function Rainet.bulk_pull_accounts(frontier)
   }
   
   Bus.pub("bulk_pull:progress",  bus_data)
-  
+  print("done?!")
   return ok, failed, errs
 end
 
@@ -223,35 +248,35 @@ function Rainet.fetch_frontiers()
   local min_good_frontier_requests = 3
   
   local good_frontier_requests = 0
+  local active_peers = {}
   local largest_frontier_pull_size = tonumber(DB.kv.get("largest_frontier_pull") or 0)
   if config.bootstrap.min_frontier_size > largest_frontier_pull_size then
     largest_frontier_pull_size = config.bootstrap.min_frontier_size
   end
   
-  local active_peers = {}
-  local frontiers_set, failed, errs = coroutine.workpool({
-    work = (function()
-      local fastpeers = {}
-      return function()
-        if good_frontier_requests < min_good_frontier_requests then
-          local peer = table.remove(fastpeers)
-          if not peer then
-            fastpeers = Peer.get_fastest_ping(100)
-            return table.remove(fastpeers)
-          else
-            return peer
-          end
-        else
-          --the work is done. stop all active peers
-          for peer, _ in pairs(active_peers) do
-            if peer.tcp then
-              peer.tcp:stop("frontier fetch finished")
-            end
-          end
-          return nil
+  local function check_completion()
+    if good_frontier_requests < min_good_frontier_requests then
+      return false
+    else
+      --the work is done. stop all active peers
+      for peer, _ in pairs(active_peers) do
+        if peer.tcp then
+          peer.tcp:stop("frontier fetch finished")
         end
       end
-    end)(),
+      return true
+    end
+  end
+  
+  
+  local frontiers_set, failed, errs = coroutine.workpool({
+    work = function()
+      if check_completion() then
+        return nil
+      else
+        return assert(Peer.get_best_bootstrap_peer())
+      end
+    end,
     retry = 0,
     progress = (function()
       local last_failed_peer = 1
@@ -263,18 +288,22 @@ function Rainet.fetch_frontiers()
           failed_peers = {}
         }
         good_frontier_requests = #work_done
-        log:debug("frontiers: downloading from %i peers. (%i/%i complete) (%i failed)", active_workers, #work_done, min_good_frontier_requests, #peers_failed)
-        for peer, stats in pairs(active_peers) do
-          log:debug("frontiers: %5d/sec frontiers (%7d total) [%5.2f%%] from %s", stats.rate or 0, (stats.total or 0), (stats.progress or 0) * 100, peer)
+        if not check_completion() then
+          log:debug("frontiers: downloading from %i peers. (%i/%i complete) (%i failed)", active_workers, #work_done, min_good_frontier_requests, #peers_failed)
+          for peer, stats in pairs(active_peers) do
+            log:debug("frontiers: %5d/sec frontiers (%7d total) [%5.2f%%] from %s", stats.rate or 0, (stats.total or 0), (stats.progress or 0) * 100, peer)
+          end
+          while last_failed_peer <= #peers_failed do
+            local failed_peer = peers_failed[last_failed_peer]
+            local failed_peer_error = peers_failed_err[last_failed_peer]
+            log:debug("frontiers:   pull failed from %s: %s", failed_peer, failed_peer_error)
+            last_failed_peer = last_failed_peer + 1
+            bus_data.failed_peers[failed_peer] = failed_peer_error
+          end
+          Bus.pub("fetch_frontiers:progress", bus_data)
+        else
+          log:debug("frontiers: pull complete")
         end
-        while last_failed_peer <= #peers_failed do
-          local failed_peer = peers_failed[last_failed_peer]
-          local failed_peer_error = peers_failed_err[last_failed_peer]
-          log:debug("frontiers:   pull failed from %s: %s", failed_peer, failed_peer_error)
-          last_failed_peer = last_failed_peer + 1
-          bus_data.failed_peers[failed_peer] = failed_peer_error
-        end
-        Bus.pub("fetch_frontiers:progress", bus_data)
       end
     end)(),
     worker = function(peer)
@@ -310,6 +339,11 @@ function Rainet.fetch_frontiers()
       end)
       active_peers[peer]=nil
       return frontiers, err
+    end,
+    check = function(peer, res)
+      if not res then
+        peer:update_bootstrap_score(-1)
+      end
     end
   })
   Bus.pub("fetch_frontiers:progress", {

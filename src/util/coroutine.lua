@@ -1,6 +1,13 @@
 local coroutine_running = coroutine.running
 local coroutine_resume = coroutine.resume
 local mm = require "mm"
+local log = require "prailude.log"
+
+local xpcall_with_args; do
+  local ver = ({Q="Lua 5.1",R="Lua 5.2",S="Lua 5.3"})[("").dump(function() end):sub(5,5)] or "LuaJIT"
+  xpcall_with_args = ver ~= "Lua 5.1"
+end
+
 
 local function running()
   --always behave like lua5.1's coroutine.running
@@ -19,7 +26,7 @@ end
 
 local function resume_handler(coro, ok, err, ...)
   if not ok then
-    io.stderr:write((debug.traceback(coro, err, 1) .. "\n"))
+    log:error((debug.traceback(coro, err, 1) .. "\n"))
   end
   return ok, err, ...
 end
@@ -73,8 +80,21 @@ end
 
 
 
+local safe_call; do
+  if xpcall_with_args and type(debug) == "table" and type(debug.traceback) == "function" then
+    local traceback = debug.traceback
+    safe_call = function(func, ...)
+      return xpcall(func, traceback, ...)
+    end
+  else
+    safe_call = function(func, ...)
+      return pcall(func, ...)
+    end
+  end
+end
+
 local workpool_defaults = {__index = {
-  max_workers = 4,
+  max_workers = 5,
   retry = 0,
   progress_inverval = 1000
 }}
@@ -109,6 +129,9 @@ local Workpool = function(opt)
     error("retry option must be nil, a number or afunction, was instead " .. type(opt.retry))
   end
   
+  local check = nil
+  if opt.check then check = opt.check end
+  
   local active_workers = 0
   
   local moreworkers
@@ -116,7 +139,7 @@ local Workpool = function(opt)
     moreworkers = opt.grow
   elseif not opt.grow then
     moreworkers = function()
-      return active_workers <= opt.max_workers
+      return active_workers < opt.max_workers
     end
   else
     error("'grow' option must be a function")
@@ -135,6 +158,7 @@ local Workpool = function(opt)
   elseif type(opt.work) == "function" then
     work.todo = {}
     nextjob = function()
+      
       return function()
         local job = table.remove(work.todo)
         if job == nil then
@@ -176,9 +200,16 @@ local Workpool = function(opt)
   
   local worker = function(job)
     active_workers = active_workers + 1
-    local ok, res, err = pcall(opt.worker, job)
+    local ok, res, err = safe_call(opt.worker, job)
     if not ok then
+      log:error("workpool: %s", res)
       res, err = nil, res
+    end
+    if check then
+      local check_ok, check_err = pcall(check, job, res, err)
+      if not check_ok then
+        log:error("workpool: %s", check_err)
+      end
     end
     if res == nil then
       if retryjob(job) then

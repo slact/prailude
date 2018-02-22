@@ -143,7 +143,6 @@ local TCPSession_meta = {
       if not self.tcp then
         self.tcp = uv.new_tcp()
       end
-      
       if not self.tcp:is_readable() or not self.tcp:is_writable() then --is not connected
         --let's connect
         self.tcp:connect(self.peer.address, self.peer.port, function(connect_err)

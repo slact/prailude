@@ -22,10 +22,10 @@ local Vote_meta = { __index = {
   end
 }}
 
-local vcache = setmetatable({}, {__mode="kv"})
+--local vcache = setmetatable({}, {__mode="kv"})
 
 function Vote.new(data)
-  local self = vcache[data.signature]
+  local self = nil --vcache[data.signature]
   if self then
     return self
   else
@@ -48,6 +48,7 @@ function Vote.new(data)
       hash = blake2b_hash(block.hash, data.sequence),
     }
     setmetatable(self, Vote_meta)
+    
     return self
   end
 end

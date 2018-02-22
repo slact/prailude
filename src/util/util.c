@@ -161,28 +161,29 @@ static int raiutil_print_hex(lua_State *L) {
 }
 
 static int raiutil_to_hex(lua_State *L) {
-  char          out[1024];
+  char         *out;
   const char   *in;
   size_t        sz;
   in = luaL_checklstring(L, 1, &sz);
-  if(sz > 511) {
-    RETURN_FAIL(L, "to_hex input may not exceed 512 bytes");
+  if((out = malloc(sz*2 + 1)) == NULL) {
+    return luaL_error(L, "unable to allocate tmp buf for hex dump of binary string");
   }
   bin_to_strhex((const unsigned char *)in, sz, (unsigned char *)out);
   lua_pushstring(L, out);
+  free(out);
   return 1;
 }
 
 static int raiutil_from_hex(lua_State *L) {
-  char          out[512];
+  char         *out;
   const char   *in;
   size_t        len, i, j;
   in = luaL_checklstring(L, 1, &len);
-  if(len > 1023) {
-    RETURN_FAIL(L, "from_hex input may not exceed 1024 bytes");
-  }
-  else if(len % 2 != 0) {
+  if(len % 2 != 0) {
     RETURN_FAIL(L, "from_hex input must have an even number of chars");
+  }
+  if((out = malloc(len/2+1)) == NULL) {
+    luaL_error(L, "unable to allocate tmp buf for hex load of binary string");
   }
   size_t final_len = len / 2;
   for (i=0, j=0; j<final_len; i+=2, j++)
@@ -190,10 +191,9 @@ static int raiutil_from_hex(lua_State *L) {
   out[final_len] = '\0';
   
   lua_pushlstring(L, out, final_len);
+  free(out);
   return 1;
 }
-
-
 
 // from luasocket
 /*-------------------------------------------------------------------------*\

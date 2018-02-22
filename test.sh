@@ -3,13 +3,13 @@
 VALGRIND_OPT=( "--tool=memcheck" "--track-origins=yes" "--read-var-info=yes" )
 
 VG_MEMCHECK_OPT=( "--keep-stacktraces=alloc-and-free")
-VG_LEAKCHECK_OPT=("--leak-check=full" "--show-leak-kinds=all" "--leak-check-heuristics=all")
+VG_LEAKCHECK_OPT=("--leak-check=no")
 
 #expensive definedness checks (newish option)
-VG_MEMCHECK_OPT+=( "--expensive-definedness-checks=yes")
+#VG_MEMCHECK_OPT+=( "--expensive-definedness-checks=yes")
 
 #long stack traces
-VG_MEMCHECK_OPT+=("--num-callers=20")
+VG_MEMCHECK_OPT+=("--num-callers=40")
 
 #generate suppresions
 #VG_MEMCHECK_OPT+=("--gen-suppressions=all")

@@ -29,10 +29,10 @@ end
 
 local db
 
-local peer_find, peer_store, peer_get8, peer_get8_except, peer_get_active_to_keepalive, peer_get_fastest_ping, peer_update_keepalive_ping, peer_get_for_bootstrap
-local peer_update_num = {}
+local sql = {}
+local sql_peer_update_num = {}
 
-local cache = setmetatable({}, {__mode = "kv"})
+local cache = setmetatable({}, {__mode = "v"})
 
 local PeerDB_meta = {__index = {
   find = function(peer_addr, peer_port)
@@ -41,10 +41,10 @@ local PeerDB_meta = {__index = {
     if peer == false then
       return nil
     elseif not peer then
-      peer_find:bind(1, peer_addr)
-      peer_find:bind(2, peer_port)
-      peer = peer_find:nrows()(peer_find)
-      peer_find:reset()
+      sql.find:bind(1, peer_addr)
+      sql.find:bind(2, peer_port)
+      peer = sql.find:nrows()(sql.find)
+      sql.find:reset()
       if peer then
         peer = Peer.new(peer)
       end
@@ -56,47 +56,40 @@ local PeerDB_meta = {__index = {
   end,
   
   store = function(self)
-    peer_store:bind(1, self.address)
-    peer_store:bind(2, self.port)
-    peer_store:bind(3, self.last_received)
-    peer_store:bind(4, self.last_sent)
-    peer_store:bind(5, self.last_keepalive_sent)
-    peer_store:bind(6, self.last_keepalive_received)
-    peer_store:step()
+    sql.store:bind(1, self.address)
+    sql.store:bind(2, self.port)
+    sql.store:bind(3, self.last_received)
+    sql.store:bind(4, self.last_sent)
+    sql.store:bind(5, self.last_keepalive_sent)
+    sql.store:bind(6, self.last_keepalive_received)
+    sql.store:step()
     --TODO: error handling?
-    peer_store:reset()
+    sql.store:reset()
     --cache it
     rawset(cache, self.id, self)
     return self
   end,
   
   get_best_bootstrap_peer = function()
-    peer_get_for_bootstrap:bind(1, 1)
-    local peer = peer_get_for_bootstrap:nrows()(peer_find)
-    peer_get_for_bootstrap:reset()
-    return peer
-  end,
-  
-  get_fastest_ping = function(n)
-    peer_get_fastest_ping:bind(1, n or 1)
-    local peers = {}
-    for row in peer_get_fastest_ping:nrows() do
-      table.insert(peers, Peer.new(row))
-    end
-    return peers
+  local stmt = sql.get_for_bootstrap
+    stmt:bind(1, Peer.inactivity_timeout)
+    stmt:bind(2, 1)
+    local data = stmt:nrows()(stmt)
+    stmt:reset()
+    return Peer.new(data)
   end,
   
   get8 = function(except_peer)
     --TODO: cache this maybe? we probably shouldn't have to hit the DB for every keepalive...
     local select
     if except_peer then
-      peer_get8_except:bind(1, Peer.keepalive_interval)
-      peer_get8_except:bind(2, except_peer.address)
-      peer_get8_except:bind(3, except_peer.port)
-      select = peer_get8_except
+      select = sql.get8_except
+      select:bind(1, Peer.keepalive_interval)
+      select:bind(2, except_peer.address)
+      select:bind(3, except_peer.port)
     else
-      peer_get8:bind(1, Peer.keepalive_interval)
-      select = peer_get8
+      select = sql.get8
+      select:bind(1, Peer.keepalive_interval)
     end
     local peers = {}
     for row in select:nrows() do
@@ -108,32 +101,28 @@ local PeerDB_meta = {__index = {
   
   get_active_needing_keepalive = function()
     --TODO: cache maybe? eh...
-    local now = os.time()
-    peer_get_active_to_keepalive:bind(1, now - Peer.inactivity_timeout)
-    peer_get_active_to_keepalive:bind(2, now - Peer.keepalive_interval)
+    local stmt = sql.get_active_to_keepalive
+    stmt:bind(1, Peer.inactivity_timeout)
+    stmt:bind(2, Peer.keepalive_interval)
     local peers = {}
-    for row in peer_get_active_to_keepalive:nrows() do
+    for row in stmt:nrows() do
       table.insert(peers, Peer.new(row))
     end
-    peer_get_active_to_keepalive:reset()
+    stmt:reset()
     return peers
   end,
   
-  get_active = function()
+  get_active_count = function()
     --TODO: cache maybe? eh...
-    local now = os.time()
-    peer_get_active_to_keepalive:bind(1, 0)
-    peer_get_active_to_keepalive:bind(2, now - Peer.inactivity_timeout)
-    local peers = {}
-    for row in peer_get_active_to_keepalive:nrows() do
-      table.insert(peers, Peer.new(row))
-    end
-    peer_get_active_to_keepalive:reset()
-    return peers
+    local stmt = sql.get_active_count
+    stmt:bind(1, Peer.inactivity_timeout)
+    local count = stmt:urows()(stmt)
+    stmt:reset()
+    return count
   end,
   
   update_num_field = function(self, field)
-    local stmt = peer_update_num[field]
+    local stmt = sql_peer_update_num[field]
     assert(stmt, "unknown timestamp field")
     stmt:bind(1, self[field])
     stmt:bind(2, self.address)
@@ -144,17 +133,21 @@ local PeerDB_meta = {__index = {
   end,
   
   update_keepalive_ping = function(self, keepalive_received_time)
-    local stmt = peer_update_keepalive_ping
+    local stmt = sql.update_keepalive_ping
     if keepalive_received_time then
       self.last_keepalive_received = keepalive_received_time
     else
       keepalive_received_time = self.last_keepalive_received
     end
     stmt:bind(1, keepalive_received_time)
-    stmt:bind(2, keepalive_received_time - self.last_keepalive_sent)
+    if not keepalive_received_time or not self.last_keepalive_send then
+      stmt:bind(2, 1000)
+    else
+      stmt:bind(2, keepalive_received_time - self.last_keepalive_sent)
+    end
     stmt:bind(3, self.address)
     stmt:bind(4, self.port)
-    stmt:step()
+    assert(stmt:step(), db:errmsg())
     stmt:reset()
     return self
   end,
@@ -177,42 +170,42 @@ return {
     end
     log:debug("loaded %i previously seen peers", numpeers)
     
-    
-    peer_find = assert(db:prepare("SELECT * FROM peers WHERE address=? AND port=? LIMIT 1"), db:errmsg())
-    peer_store = assert(db:prepare("INSERT OR IGNORE INTO peers "..
-            "(address, port, last_received, last_sent, last_keepalive_sent, last_keepalive_received) "..
-      "VALUES(      ?,    ?,             ?,         ?,                   ?,                       ?)"), db:errmsg())
-    peer_get_fastest_ping = assert(db:prepare("SELECT *, (last_keepalive_received - last_keepalive_sent) AS ping FROM peers WHERE last_keepalive_received NOT NULL AND ping >= 0 ORDER BY ping ASC LIMIT ?"), db:errmsg())
-    
-    peer_get8_except = assert(db:prepare("SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - ? AND address !=? AND port != ? ORDER BY RANDOM() LIMIT 8"), db:errmsg())
-    peer_get8 = assert(db:prepare("SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - ? ORDER BY RANDOM() LIMIT 8"), db:errmsg())
-    peer_get_active_to_keepalive = assert(db:prepare("SELECT * FROM peers WHERE last_keepalive_received > ? AND last_keepalive_received < ? ORDER BY RANDOM()"), db:errmsg())
-    peer_update_keepalive_ping = assert(db:prepare("UPDATE peers SET last_keepalive_received = ?, ping = ? WHERE address = ? AND port = ?"), db:errmsg())
-    peer_get_for_bootstrap = assert(db:prepare("SELECT * FROM peers WHERE tcp_in_use != 1 ORDER BY bootstrap_score DESC, ping ASC LIMIT ?"), db:errmsg())
-    
-    for _, v in pairs{"last_received", "last_sent", "last_keepalive_sent", "last_keepalive_received", "bootstrap_score", "tcp_in_use"} do
-      peer_update_num[v] = assert(db:prepare("UPDATE peers SET " .. v.." = ? WHERE address = ? AND port = ?"), db:errmsg())
-    end
+  sql.store = "INSERT OR IGNORE INTO peers "..
+              "      (address, port, last_received, last_sent, last_keepalive_sent, last_keepalive_received) "..
+              "VALUES(      ?,    ?,             ?,         ?,                   ?,                       ?)"
+  sql.find = "SELECT * FROM peers WHERE address=? AND port=? LIMIT 1"
+  sql.get8_except = "SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - ? "..
+    "AND address !=? AND port != ? ORDER BY RANDOM() LIMIT 8"
+  sql.get8 = "SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - ? ORDER BY RANDOM() LIMIT 8"
+  sql.get_active_to_keepalive="SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - ? "..
+    "AND last_keepalive_received < datetime('now') - ? ORDER BY RANDOM()"
+  sql.get_active_count = "SELECT COUNT(*) FROM peers WHERE last_keepalive_received > datetime('now') - ?"
+  sql.update_keepalive_ping = "UPDATE peers SET last_keepalive_received = ?, ping = ? WHERE address = ? AND port = ?"
+  sql.get_for_bootstrap = "SELECT * FROM peers WHERE tcp_in_use != 1 AND last_keepalive_received NOT NULL "..
+    "AND last_keepalive_received > datetime('now') - ? ORDER BY bootstrap_score DESC, ping ASC LIMIT ?"
+  for k, v in pairs(sql) do
+    sql[k] = assert(db:prepare(v), "SQL Error for " ..k..":  " .. tostring(db:errmsg()))
+  end
+  
+  for _, v in pairs{"last_received", "last_sent", "last_keepalive_sent", "last_keepalive_received", "bootstrap_score", "tcp_in_use"} do
+    sql_peer_update_num[v] = assert(db:prepare("UPDATE peers SET " .. v.." = ? WHERE address = ? AND port = ?"), db:errmsg())
+  end
     
     setmetatable(Peer, PeerDB_meta)
   end,
   shutdown = function()
     --save previously known peers
     assert(db:exec("INSERT OR REPLACE INTO stored_peers SELECT * FROM peers") == sqlite3.OK, db:errmsg())
+    assert(db:exec("UPDATE stored_peers SET tcp_in_use = 0") == sqlite3.OK, db:errmsg()) --clear all tcp_in_use lock flags
     local numpeers
     for row in db:urows("SELECT count(*) FROM peers;") do
       numpeers = row
     end
     log:debug("stored %i seen peers", numpeers)
-    peer_find:finalize()
-    peer_store:finalize()
-    peer_get_fastest_ping:finalize()
-    peer_get8_except:finalize()
-    peer_get8:finalize()
-    peer_get_active_to_keepalive:finalize()
-    peer_update_keepalive_ping:finalize()
-    peer_get_for_bootstrap:finalize()
-    for _, v in pairs(peer_update_num) do
+    for _, v in pairs(sql_peer_update_num) do
+      v:finalize()
+    end
+    for _, v in pairs(sql) do
       v:finalize()
     end
   end

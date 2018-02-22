@@ -49,6 +49,12 @@ local Peer_instance = {
     Peer.update_num_field(self, "bootstrap_score")
     return self
   end,
+  
+  update_keepalive_ping = function(self, keepalive_received_time)
+    keepalive_received_time = keepalive_received_time or gettime()
+    return Peer.update_keepalive_ping(self, keepalive_received_time)
+  end,
+  
 }
 local peer_meta = {
   __index=Peer_instance,

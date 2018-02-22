@@ -13,6 +13,7 @@ local mm = require "mm"
 local Parser = require "prailude.util.parser"
 
 local NilDB = require "prailude.db.nil" -- no database
+local CJSON = require "cjson.safe"
 
 local block_typecode = {
   send =          2,
@@ -93,7 +94,31 @@ local Block_instance = {
   end,
   typecode = function(self)
     return block_typecode[self.type]
-  end
+  end,
+  
+  to_json = function(self)
+    local function b2h(b, reverse)
+      if b then
+        return Util.bytes_to_hex(reverse and b:reverse() or b)
+      end
+    end
+    local function acct2r(raw)
+      if raw then return Account.to_readable(raw) end
+    end
+    local data = {
+      previous = b2h(self.previous),
+      source = b2h(self.source),
+      balance = b2h(self.balance),
+      work = b2h((self.work or ""):reverse()),
+      signature = b2h(self.signature),
+      representative = acct2r(self.representative),
+      account = acct2r(self.account),
+      destination = acct2r(self.destination),
+      hash = b2h(self.hash)
+    }
+    return CJSON.encode(data)
+  end,
+  
 }
 local block_meta = {__index = function(self, k)
   local fn = rawget(Block_instance, k)
@@ -142,10 +167,11 @@ end
 
 local block_cache = {}
 for _, v in pairs{"open", "change", "receive", "send"} do
-  block_cache[v]=setmetatable({}, {__mode="kv"})
+  block_cache[v]=setmetatable({}, {__mode="v"})
 end
 
 function Block.unpack(block_type, raw)
+  --local block = nil
   local bcache = rawget(block_cache, block_type)
   local block = rawget(bcache, raw)
   if not block then
@@ -157,6 +183,38 @@ function Block.unpack(block_type, raw)
     --TODO: make block immutable
     rawset(bcache, raw, block)
   end
+  return block
+end
+
+function Block.from_json(json_string)
+  local data, err = CJSON.decode(json_string)
+  if not data then
+    return nil, err
+  elseif type(data) ~= "table" then
+    return nil, "json string doesn't represent an object"
+  elseif not data.type then
+    return nil, "block type missing"
+  end
+  local h2b, acct2b = Util.hex_to_bytes, Account.to_bytes
+  for k, transform in pairs {previous=h2b, source=h2b, balance=h2b, work=h2b, signature=h2b, representative = acct2b, account=acct2b, destination=acct2b} do
+    if data[k] then
+      data[k]=transform(data[k])
+    end
+  end
+  
+  local block
+  block, err = Block.new(data)
+  if not block then return
+    nil, err
+  end
+  
+  if block.work then
+    block.work = block.work:reverse()
+    if not block:verify_PoW() then
+      return nil, "PoW verification failed"
+    end
+  end
+  
   return block
 end
 
@@ -190,6 +248,5 @@ else
   assert(Block.genesis:pack())
 end
 assert(Block.genesis:verify())
-
 
 return setmetatable(Block, NilDB.block)

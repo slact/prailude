@@ -44,8 +44,8 @@ local schema = [[
 ]]
 
 local cache = {
-  hash = setmetatable({}, {__mode="kv"}),
-  account = setmetatable({}, {__mode="k"})
+  hash = setmetatable({}, {__mode="v"}),
+  account = setmetatable({}, {__mode="v"})
 }
 
 local block_get, block_set, block_get_by_acct
@@ -63,6 +63,7 @@ local BlockDB_meta = {__index = {
         block = Block.new(block)
       end
       rawset(cache.hash, hash, block or false)
+      return block
     elseif block == false then
       return nil
     else

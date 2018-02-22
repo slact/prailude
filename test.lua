@@ -75,5 +75,4 @@ Timer.delay(1000000000, function() end)
 uv.run()
 ]]
 
-prailude.initialize()
 prailude.run()

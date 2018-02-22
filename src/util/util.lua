@@ -150,6 +150,21 @@ local util = {
   end,
   
   bytes_to_hex = cutil.bytes_to_hex,
+  bytes_to_hex_debug = function(bytes)
+    local hex = cutil.bytes_to_hex(bytes)
+    local n = 0
+    local out = {""}
+    for byte in hex:gmatch("..") do
+      table.insert(out, byte)
+      n = n+1
+      if n%16 == 0 then
+        table.insert(out, "\n")
+      elseif n%8 == 0 then
+        table.insert(out, " ")
+      end
+    end
+    return table.concat(out, " ")
+  end,
   hex_to_bytes = function(hex)
     return cutil.hex_to_bytes(hex:upper())
   end,

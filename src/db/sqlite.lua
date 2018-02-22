@@ -5,6 +5,7 @@ local subdbs = {
   require "prailude.db.sqlite.peer",
   require "prailude.db.sqlite.block",
   require "prailude.db.sqlite.frontier",
+  require "prailude.db.sqlite.account",
   require "prailude.db.sqlite.kv",
 }
 

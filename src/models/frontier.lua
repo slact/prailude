@@ -36,7 +36,6 @@ function Frontier.fetch(peer, watchdog_callback)
   local function watchdog_wrapper()
     return watchdog_callback(frontiers_so_far, progress)
   end
-  
   return peer:tcp_session("frontier pull", function(tcp)
     tcp:write(frontier_req:pack())
     local fresh_frontiers, leftovers_or_err, done, current_progress
