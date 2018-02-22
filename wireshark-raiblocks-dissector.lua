@@ -1,6 +1,9 @@
 local loaded, prailude = pcall(require,"prailude")
 if not loaded then
-  error("'prailude' package is required for RaiBlocks packet dissassembly. Please install it using luarocks for " .. _VERSION)
+   io.stdout:write("error="..prailude.."\n")
+   io.stdout:write("package.path=".. package.path.."\n")
+   io.stdout:write("package.cpath=".. package.cpath.."\n")
+   error("'prailude' package is required for RaiBlocks packet dissassembly. Please install it using luarocks for " .. _VERSION)
 end
 local blake2b_hash = prailude.util.blake2b.hash
 local unpack_balance = prailude.util.unpack_balance
