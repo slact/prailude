@@ -135,14 +135,16 @@ local Workpool = function(opt)
   local active_workers = 0
   
   local moreworkers
-  if type(opt.grow) == "function" then
-    moreworkers = opt.grow
-  elseif not opt.grow then
+  if type(opt.max_workers) == "function" then
+    moreworkers = function()
+      return opt.max_workers(active_workers, opt)
+    end
+  elseif type(opt.max_workers) == "number" then
     moreworkers = function()
       return active_workers < opt.max_workers
     end
   else
-    error("'grow' option must be a function")
+    error("'max_workers' option must be a number or function")
   end
   
   if type(opt.work) == "table" then
