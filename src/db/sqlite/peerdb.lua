@@ -33,11 +33,17 @@ local sql = {}
 local sql_peer_update_num = {}
 
 local cache = setmetatable({}, {__mode = "v"})
+local cache_enabled = true
 
 local PeerDB_meta = {__index = {
   find = function(peer_addr, peer_port)
-    local id = ("%s:%.0f"):format(peer_addr, peer_port)
-    local peer = rawget(cache, id)
+    local peer, id
+    if cache_enabled then
+      id = ("%s:%.0f"):format(peer_addr, peer_port)
+      peer = cache_enabled and rawget(cache, id)
+    else
+      peer = nil
+    end
     if peer == false then
       return nil
     elseif not peer then
@@ -48,7 +54,9 @@ local PeerDB_meta = {__index = {
       if peer then
         peer = Peer.new(peer)
       end
-      rawset(cache, id, peer or false)
+      if cache_enabled then
+        rawset(cache, id, peer or false)
+      end
       return peer
     else
       return peer
@@ -65,8 +73,11 @@ local PeerDB_meta = {__index = {
     sql.store:step()
     --TODO: error handling?
     sql.store:reset()
-    --cache it
-    rawset(cache, self.id, self)
+    
+    if cache_enabled then
+      --cache it
+      rawset(cache, self.id, self)
+    end
     return self
   end,
   
