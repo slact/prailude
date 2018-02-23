@@ -22,7 +22,7 @@ luarocks="luarocks"
 
 for opt in $*; do
   case $opt in
-    5.1)
+    5.1|luajit)
       luarocks="luarocks-5.1";;
     5.2)
       luarocks="luarocks-5.2";;
