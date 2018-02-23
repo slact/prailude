@@ -80,7 +80,7 @@ local Block_instance = {
   end,
   verify_signature = function(self, account_raw)
     if self.type == "open" then
-      return verify_edDSA_blake2b_signature(self.hash, self.signature, self.account)
+      return verify_edDSA_blake2b_signature(self.hash, self.signature, account_raw or self.account)
     elseif account_raw then
       return verify_edDSA_blake2b_signature(self.hash, self.signature, account_raw)
     else
@@ -216,6 +216,23 @@ function Block.from_json(json_string)
   end
   
   return block
+end
+
+function Block.batch_verify_signatures(blocks, account_pubkey)
+  local batch = {}
+  for i, block in ipairs(blocks) do
+    rawset(batch, i, {block.hash, block.signature, account_pubkey})
+  end
+  local all_valid = Util.ed25519.batch_verify(batch)
+  if all_valid then
+    return true
+  else
+    local valid = {}
+    for i, v in ipairs(batch) do
+      rawset(valid, i, rawget(v, "valid"))
+    end
+    return false, valid
+  end
 end
 
 local main_net = true
