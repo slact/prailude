@@ -13,11 +13,14 @@ local schema = [[
     
     delegated_balance     REAL, --inexactness is ok here
     
+    valid                 INTEGER NOT NULL DEFAULT 0,
+    
     source_peer           TEXT,
     PRIMARY KEY(id)
   ) WITHOUT ROWID;
   
   CREATE INDEX IF NOT EXISTS account_frontier_idx   ON accounts (frontier);
+  CREATE INDEX IF NOT EXISTS account_checked_idx    ON accounts (valid);
   CREATE INDEX IF NOT EXISTS account_rep_idx        ON accounts (representative_acct);
   CREATE INDEX IF NOT EXISTS account_balance_idx    ON accounts (balance);
 ]]
@@ -59,10 +62,12 @@ local AccountDB_meta = {__index = {
     end
     account_set:bind(7, self.delegated_balance)
     
+    account_set:bind(8, self.valid)
+    
     if self.source_peer then
-      account_set:bind(8, tostring(self.source_peer))
+      account_set:bind(9, tostring(self.source_peer))
     else
-      account_set:bind(8, nil)
+      account_set:bind(9, nil)
     end
     
     account_set:step()
@@ -104,10 +109,12 @@ return {
     end
     
     account_get = assert(db:prepare("SELECT * FROM accounts WHERE id = ?"), db:errmsg())
-    account_set = assert(db:prepare("INSERT OR REPLACE INTO accounts (id, frontier, num_blocks, representative_acct, balance_raw, balance, delegated_balance, source_peer) VALUES(?, ?, ?, ?, ?, ?, ?, ?)"), db:errmsg())
+    account_set = assert(db:prepare("INSERT OR REPLACE INTO accounts " ..
+      "      (id, frontier, num_blocks, representative_acct, balance_raw, balance, delegated_balance, valid, source_peer) " ..
+      "VALUES(?,         ?,          ?,                   ?,           ?,       ?,                 ?,     ?,           ?)"), db:errmsg())
     account_update_balance = assert(db:prepare("UPDATE accounts SET balance = ?, balance_raw = ? WHERE id = ?"), db:errmsg())
     
-    for _, n in ipairs {"frontier", "representative_acct", "delegated_balance", "num_blocks", "source_peer"} do
+    for _, n in ipairs {"frontier", "representative_acct", "delegated_balance", "num_blocks", "valid", "source_peer"} do
       account_update[n]=assert(db:prepare("UPDATE accounts SET " .. n .. " = ? WHERE id = ?"), n .. ":  " .. db:errmsg())
     end
     
