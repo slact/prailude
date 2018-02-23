@@ -183,7 +183,7 @@ function Rainet.bulk_pull_accounts(frontier)
         local blocks_fetched = #blocks_so_far - prev_blocks
         prev_blocks = #blocks_so_far
         if blocks_fetched < min_speed then -- too slow
-          if slow_in_a_row > 2 then
+          if slow_in_a_row > 0 then
             return false, "account pull too slow"
           else
             slow_in_a_row = slow_in_a_row + 1
@@ -197,32 +197,42 @@ function Rainet.bulk_pull_accounts(frontier)
       active_peers[peer]=nil
       if acct_blocks then
         if frontier_hash_found_or_err then
-          --all right!
-          total_blocks_fetched = total_blocks_fetched + #acct_blocks
-          peer:update_bootstrap_score(account_frontier_score_delta)
-          --print("upgrade")
+          --all right?
+          local all_valid, block_valid = Block.batch_verify_signatures(acct_blocks, acct_frontier.account)
+          if all_valid then
+            --everything's okay
+            total_blocks_fetched = total_blocks_fetched + #acct_blocks
+            peer:update_bootstrap_score(account_frontier_score_delta)
+            --print("upgrade")
+            return {peer = peer, frontier = acct_frontier, blocks = #acct_blocks, frontier_found = frontier_hash_found_or_err}
+          else
+            --badsig
+            local  readable_acct = Account.to_readable(acct_frontier.account)
+            for i, v in ipairs(block_valid) do
+              if not v then
+                log:warn("bootstrap: got bad-sig block from %s for acct %s: %s", tostring(peer), readable_acct, acct_blocks[i]:to_json())
+              end
+            end
+            peer:update_bootstrap_score(- 100 * account_frontier_score_delta)
+            return nil, "bad signature in account blocks"
+          end
         else
           --assume it's the peer's fault we didn't find the frontier hash
           -- ATTACK VECTOR: this assumes we trust the frontier, which means an attacker
           -- that poisons the frontier will eventually gain bootstrap-score over legit peers
-          --print("downgrade a little!")
-          --mm(acct_frontier)
-          --for i,b in pairs(acct_blocks) do
-          --  print(i, b.hash)
-          --end
-          
-          peer:update_bootstrap_score(-account_frontier_score_delta)
-          --print("peer", tostring(peer), "account found, but without frontier")
+          peer:update_bootstrap_score(-10 * account_frontier_score_delta)
+          print("peer", tostring(peer), "account found, but without frontier")
           return nil, "account found, but without frontier"
         end
-        return {peer = peer, frontier = acct_frontier, blocks = acct_blocks, frontier_found = frontier_hash_found_or_err}
       else
         --print("peer", tostring(peer), frontier_hash_found_or_err)
         if frontier_hash_found_or_err == "Connection refused" or frontier_hash_found_or_err == "No route to host" then
           peer:update_bootstrap_score(-1)
         elseif frontier_hash_found_or_err == "account pull too slow" then
+          print("peer", tostring(peer), "too slow")
           peer:update_bootstrap_score(- 10 * account_frontier_score_delta)
         else
+          print("peer", tostring(peer), frontier_hash_found_or_err)
           peer:update_bootstrap_score(-account_frontier_score_delta)
         end
         return nil, frontier_hash_found_or_err
