@@ -43,17 +43,15 @@ local schema = [[
   --CREATE INDEX IF NOT EXISTS blocksource_time_idx        ON block_sources (time);
 ]]
 
-local cache = {
-  hash = setmetatable({}, {__mode="v"}),
-  account = setmetatable({}, {__mode="v"})
-}
+local cache = setmetatable({}, {__mode="v"})
+local cache_enabled = true
 
 local block_get, block_set, block_get_by_acct
 
 local db
 local BlockDB_meta = {__index = {
   find = function(hash)
-    local block = rawget(cache.hash, hash)
+    local block = cache_enabled  and rawget(cache, hash) or nil
     if block == nil then
       block_get:bind(1, hash)
       block = block_get:nrows()(block_get)
@@ -62,7 +60,9 @@ local BlockDB_meta = {__index = {
       if block then
         block = Block.new(block)
       end
-      rawset(cache.hash, hash, block or false)
+      if cache_enabled then
+        rawset(cache, hash, block or false)
+      end
       return block
     elseif block == false then
       return nil
@@ -115,13 +115,9 @@ local BlockDB_meta = {__index = {
     block_set:step()
     --TODO: check for sqlite3.BUSY and such responses
     block_set:reset()
-    
-    --update cache
-    rawset(cache.hash, self.hash, self)
-    --update account block cache
-    if self.type == "open" then
-      assert(self.account)
-      cache.account[self.account] = {[1]=self}
+    if cache_enabled then
+      --update cache
+      rawset(cache, self.hash, self)
     end
     
   end
