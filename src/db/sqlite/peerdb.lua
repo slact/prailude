@@ -196,7 +196,7 @@ return {
   shutdown = function()
     --save previously known peers
     assert(db:exec("INSERT OR REPLACE INTO stored_peers SELECT * FROM peers") == sqlite3.OK, db:errmsg())
-    assert(db:exec("UPDATE stored_peers SET tcp_in_use = 0") == sqlite3.OK, db:errmsg()) --clear all tcp_in_use lock flags
+    assert(db:exec("UPDATE stored_peers SET tcp_in_use = 0, bootstrap_score = 0") == sqlite3.OK, db:errmsg()) --clear all tcp_in_use lock flags and bootstrap scores
     local numpeers
     for row in db:urows("SELECT count(*) FROM peers;") do
       numpeers = row
