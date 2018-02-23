@@ -301,26 +301,20 @@ static int lua_edDSA_blake2b_verify(lua_State *L) { //message, signature, pubkey
 
 #define ED25519_MAX_BATCH_SIZE 64
 
-static int lua_edDSA_blake2b_batch_verify(lua_State *L) { //{{message, signature, pubkey}, ...}
+static int blake2b_batch_verify(lua_State *L, int batchsize, int offset) {
   const unsigned char     *msg[ED25519_MAX_BATCH_SIZE];
   size_t                   msglen[ED25519_MAX_BATCH_SIZE];
   const unsigned char     *pubkey[ED25519_MAX_BATCH_SIZE];
   const unsigned char     *signature[ED25519_MAX_BATCH_SIZE];
   int                      valid[ED25519_MAX_BATCH_SIZE];
-  int                      batchsize;
   int                      all_valid, i;
   size_t                   sz;
-#if LUA_VERSION_NUM > 501
-  batchsize = lua_rawlen(L, 1);
-#else
-  batchsize = lua_objlen(L, 1);
-#endif  
   if(batchsize > ED25519_MAX_BATCH_SIZE) {
     return luaL_error(L, "ed25519_batch_verify batch size cannot exceed 64");
   }
   
   for(i=0; i < batchsize; i++) {
-    lua_rawgeti(L, 1, i+1);
+    lua_rawgeti(L, -1, i+offset+1);
     
     //message
     lua_rawgeti(L, -1, 1);
@@ -343,27 +337,35 @@ static int lua_edDSA_blake2b_batch_verify(lua_State *L) { //{{message, signature
     }
     lua_pop(L, 1);
     
-    
-    
     lua_pop(L, 1);
   }
   
   all_valid = 0 == ed25519_sign_open_batch(msg, msglen, pubkey, signature, batchsize, valid);
   if(all_valid) {
-    lua_pushboolean(L, 1);
     return 1;
   }
   else {
     for(i=0; i< batchsize; i++) {
-      lua_rawgeti(L, 1, i+1);
+      lua_rawgeti(L, -1, i+offset+1);
       lua_pushliteral(L, "valid");
       lua_pushboolean(L, valid[i]);
-      lua_rawset(L, 2);
+      lua_rawset(L, -3);
       lua_pop(L, 1);
     }
-    lua_pushboolean(L, 0);
-    return 1;
+    return 0;
   }
+}
+
+static int lua_edDSA_blake2b_batch_verify(lua_State *L) { //batch_len, {{message, signature, pubkey}, ...}
+  lua_Number               batchsize;
+  int                      all_valid = 1, offset, batchleft;
+  batchsize = luaL_checknumber(L, 1);
+  for(offset=0; offset < batchsize; offset += ED25519_MAX_BATCH_SIZE) {
+    batchleft = batchsize - offset;
+    all_valid = all_valid && blake2b_batch_verify(L, batchleft > ED25519_MAX_BATCH_SIZE ? 64 : batchleft, offset);
+  }
+  lua_pushboolean(L, all_valid);
+  return 1;
 }
 
 #define kdf_full_work (64 * 1024)

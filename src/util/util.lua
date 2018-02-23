@@ -25,7 +25,7 @@ function Ed25519Batch.add(msg, sig, pubkey, coro)
   if #batch == MAX_BATCH_SIZE then
     print("do a batch right now")
     Ed25519Batch.batch = {}
-    local all_valid = crypto.edDSA_blake2b_batch_verify(batch)
+    local all_valid = crypto.edDSA_blake2b_batch_verify(#batch, batch)
     if all_valid then
       for i=1, MAX_BATCH_SIZE-1 do
         coroutine_util.resume(batch[i][4], true)
@@ -58,7 +58,7 @@ function Ed25519Batch.start_timer()
       return false --stops timer
     else
       Ed25519Batch.batch = {}
-      local all_valid = crypto.edDSA_blake2b_batch_verify(batch)
+      local all_valid = crypto.edDSA_blake2b_batch_verify(#batch, batch)
       for _, b in ipairs(batch) do
         coroutine_util.resume(b[4], b.valid or all_valid)
       end
@@ -89,8 +89,21 @@ local util = {
     get_public_key = crypto.edDSA_blake2b_get_public_key,
     sign = crypto.edDSA_blake2b_sign,
     verify = crypto.edDSA_blake2b_verify,
-    batch_verify = function(msg, sig, pubkey)
-    assert(#sig == 64, "signature length must be 64")
+    batch_verify = function(batch)
+      local all_valid = crypto.edDSA_blake2b_batch_verify(#batch, batch)
+      if all_valid then
+        return true
+      else
+        for _, v in pairs(batch) do
+          if rawget(v, "valid") == nil then
+            rawset(v, "valid", true)
+          end
+        end
+        return false
+      end
+    end,
+    delayed_batch_verify = function(msg, sig, pubkey)
+      assert(#sig == 64, "signature length must be 64")
       assert(#pubkey == 32, "pubkey length must be 32")
       local coro = assert(coroutine_util.running(), "batch_verify must be called in a coroutine")
       return Ed25519Batch.add(msg, sig, pubkey, coro)

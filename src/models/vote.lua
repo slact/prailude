@@ -3,7 +3,7 @@ local log = require "prailude.log"
 local Block = require "prailude.block"
 local Account = require "prailude.account"
 local verify_sig = require "prailude.util".ed25519.verify
-local batch_verify_sig = require "prailude.util".ed25519.batch_verify
+local batch_verify_sig = require "prailude.util".ed25519.delayed_batch_verify
 local blake2b_hash = require "prailude.util".blake2b.hash
 
 local Vote = {}
