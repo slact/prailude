@@ -108,7 +108,7 @@ local Block_instance = {
     local data = {
       previous = b2h(self.previous),
       source = b2h(self.source),
-      balance = b2h(self.balance),
+      balance = b2h(type(self.balance) == "userdata" and self.balance:pack() or self.balance),
       work = b2h((self.work or ""):reverse()),
       signature = b2h(self.signature),
       representative = acct2r(self.representative),
