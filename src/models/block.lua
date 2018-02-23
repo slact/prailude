@@ -169,11 +169,23 @@ local block_cache = {}
 for _, v in pairs{"open", "change", "receive", "send"} do
   block_cache[v]=setmetatable({}, {__mode="v"})
 end
+local cache_enabled = true
+
+function Block.unpack_cache_enabled(val)
+  if val ~= nil then
+    cache_enabled = val
+  end
+  return cache_enabled
+end
 
 function Block.unpack(block_type, raw)
-  --local block = nil
-  local bcache = rawget(block_cache, block_type)
-  local block = rawget(bcache, raw)
+  local block, bcache
+  if cache_enabled then
+    bcache = rawget(block_cache, block_type)
+    block = rawget(bcache, raw)
+  else
+    block = nil
+  end
   if not block then
     local data, err = Parser.unpack_block(rawget(block_typecode, block_type), raw)
     if not data then
@@ -181,7 +193,9 @@ function Block.unpack(block_type, raw)
     end
     block = Block.new(data)
     --TODO: make block immutable
-    rawset(bcache, raw, block)
+    if cache_enabled then
+      rawset(bcache, raw, block)
+    end
   end
   return block
 end
