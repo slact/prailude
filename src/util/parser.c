@@ -421,7 +421,7 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       if(buflen < 64) {raise(SIGSTOP); return 0;}
       lua_rawsetfield_string(L, -1, "account", buf, 32); //start_account
       buf+=32;
-      lua_rawsetfield_string(L, -1, "hash", buf, 32); //end_block
+      lua_rawsetfield_string(L, -1, "frontier", buf, 32); //end_block
       buf+=32;
       break;
     case RAI_MSG_BULK_PUSH:
@@ -532,7 +532,7 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
         return 0;
       }
       buf += lua_table_field_fixedsize_string_encode(L, -1, "account",     buf, 32); //start_account
-      lua_rawgetfield(L, -1, "hash");
+      lua_rawgetfield(L, -1, "frontier");
       if(lua_isnil(L, -1)) {
         lua_pop(L, 1);
         memset(buf, '\0', 32);
@@ -540,7 +540,7 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
       }
       else {
         lua_pop(L, 1);
-        buf += lua_table_field_fixedsize_string_encode(L, -1, "hash",        buf, 32); //end block hash
+        buf += lua_table_field_fixedsize_string_encode(L, -1, "frontier",        buf, 32); //end block hash
       }
       break;
     case RAI_MSG_BULK_PUSH:
@@ -905,7 +905,7 @@ static int prailude_unpack_frontiers(lua_State *L) {
     last_acct = cur;
     lua_rawset(L, -3);
     
-    lua_pushliteral(L, "hash");
+    lua_pushliteral(L, "frontier");
     lua_pushlstring(L, &cur[32], 32);
     lua_rawset(L, -3);
     lua_rawseti(L, -2, ++i);

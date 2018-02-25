@@ -59,12 +59,12 @@ function Account.bulk_pull(frontier, peer, watchdog)
   Block = require "prailude.block" --late require
   
   assert(coroutine.running(), "Account.bulk_pull must be called in a coroutine")
-  local wanted_frontier = frontier.hash
+  local wanted_frontier = frontier.frontier
   local acct = Account.get(frontier.account)
   
   local bulk_pull_message = Message.new("bulk_pull", {
     account = acct.id,
-    hash = acct.frontier
+    frontier = acct.frontier
   })
   
   local blocks_so_far = {}

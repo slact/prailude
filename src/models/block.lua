@@ -15,6 +15,8 @@ local Parser = require "prailude.util.parser"
 local NilDB = require "prailude.db.nil" -- no database
 local CJSON = require "cjson.safe"
 
+local Block = {}
+
 local block_typecode = {
   send =          2,
   receive =       3,
@@ -119,6 +121,10 @@ local Block_instance = {
     return CJSON.encode(data)
   end,
   
+  store = function(self)
+    return Block.store(self)
+  end
+  
 }
 local block_meta = {__index = function(self, k)
   local fn = rawget(Block_instance, k)
@@ -128,7 +134,6 @@ local block_meta = {__index = function(self, k)
     return Block_instance.rehash(self)
   end
 end}
-local Block = {}
 
 function Block.new(block_type, data)
   if data then

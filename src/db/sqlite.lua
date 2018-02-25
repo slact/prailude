@@ -9,16 +9,47 @@ local subdbs = {
   require "prailude.db.sqlite.kv",
 }
 
-local db
+local dbs = {}
 local DB = {}
 
-function DB.initialize(opt)
-  opt = opt or {}
-  db = sqlite3.open(opt.db_file or "raiblocks.db")
-  db:exec("PRAGMA synchronous = OFF") --don't really care if the db lags behind on crash
-  db:exec("PRAGMA journal_mode = TRUNCATE")
-  db:exec("PRAGMA temp_store = MEMORY")
-  db:exec("PRAGMA foreign_keys = OFF")
+function DB.open(name, opt)
+  assert(not dbs[name], "db with name " .. name .. " already exists")
+  local db, err_code, err_msg = sqlite3.open(opt.db_file or name..".db")
+  if not db then
+    error("error opening db  " .. name .. ": " .. (err_msg or err_code))
+  end
+  for pragma, val in pairs(opt.pragma) do
+    if val == false then
+      val = "OFF"
+    elseif val == true then
+      val = "ON"
+    elseif val == nil then
+      error("Invalid nil PRAGMA " .. pragma)
+    end
+    assert(db:exec(("PRAGMA %s = %s"):format(pragma, tostring(val))) == sqlite3.OK, "PRAGMA " .. pragma .. " error: " .. db:errmsg())
+  end
+  dbs[name]=db
+  return db
+end
+
+function DB.db(name)
+  return assert(dbs[name])
+end
+
+function DB.initialize()
+  --opt = opt or {}
+  local db = DB.open("raiblocks", {
+    pragma = {
+      synchronous = false, --don't really care if the db lags behind on crash
+      journal_mode = "OFF",
+      temp_store = "FILE",
+      foreign_keys = "OFF",
+      locking_mode = "EXCLUSIVE",
+      cache_size = "100000"
+    }
+  })
+  assert(db:exec("ATTACH DATABASE ':memory:' as mem") == sqlite3.OK, db:errmsg())
+  
   for _, subdb in ipairs(subdbs) do
     subdb.initialize(db)
   end
@@ -30,6 +61,9 @@ function DB.shutdown()
     if subdb.shutdown then
       subdb.shutdown()
     end
+  end
+  for _, db in ipairs(dbs) do
+    db:close()
   end
 end
 

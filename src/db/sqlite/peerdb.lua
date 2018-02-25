@@ -3,6 +3,8 @@ local log = require "prailude.log"
 local Peer
 
 local schema = function(tbl_type, tbl_name)
+  local _, tbl = tbl_name:match("^(.+%.)(.+)")
+  if not tbl then tbl = tbl_name end
   return [[
   CREATE ]] .. tbl_type .. [[ IF NOT EXISTS ]] .. tbl_name .. [[ (
     address                  TEXT,
@@ -16,13 +18,13 @@ local schema = function(tbl_type, tbl_name)
     bootstrap_score          REAL NOT NULL DEFAULT 0,
     PRIMARY KEY(address, port)
   ) WITHOUT ROWID;
-  CREATE INDEX IF NOT EXISTS peer_last_received_idx           ON ]] .. tbl_name .. [[ (last_received);
-  CREATE INDEX IF NOT EXISTS peer_last_sent_idx               ON ]] .. tbl_name .. [[ (last_sent);
-  CREATE INDEX IF NOT EXISTS peer_last_keepalive_sent_idx     ON ]] .. tbl_name .. [[ (last_keepalive_sent);
-  CREATE INDEX IF NOT EXISTS peer_last_keepalive_received_idx ON ]] .. tbl_name .. [[ (last_keepalive_received);
-  CREATE INDEX IF NOT EXISTS peer_ping_idx                    ON ]] .. tbl_name .. [[ (ping);
-  CREATE INDEX IF NOT EXISTS peer_tcp_in_use_idx              ON ]] .. tbl_name .. [[ (tcp_in_use);
-  CREATE INDEX IF NOT EXISTS peer_bootstrap_score_idx         ON ]] .. tbl_name .. [[ (bootstrap_score);
+  CREATE INDEX IF NOT EXISTS ]] .. tbl_name .. [[_last_received_idx           ON ]] .. tbl .. [[ (last_received);
+  CREATE INDEX IF NOT EXISTS ]] .. tbl_name .. [[_last_sent_idx               ON ]] .. tbl .. [[ (last_sent);
+  CREATE INDEX IF NOT EXISTS ]] .. tbl_name .. [[_last_keepalive_sent_idx     ON ]] .. tbl .. [[ (last_keepalive_sent);
+  CREATE INDEX IF NOT EXISTS ]] .. tbl_name .. [[_last_keepalive_received_idx ON ]] .. tbl .. [[ (last_keepalive_received);
+  CREATE INDEX IF NOT EXISTS ]] .. tbl_name .. [[_ping_idx                    ON ]] .. tbl .. [[ (ping);
+  CREATE INDEX IF NOT EXISTS ]] .. tbl_name .. [[_tcp_in_use_idx              ON ]] .. tbl .. [[ (tcp_in_use);
+  CREATE INDEX IF NOT EXISTS ]] .. tbl_name .. [[_bootstrap_score_idx         ON ]] .. tbl .. [[ (bootstrap_score);
 ]]
 
 end
@@ -170,46 +172,46 @@ return {
     db = shared_db
     
     assert(db:exec(schema("TABLE", "stored_peers")) == sqlite3.OK, db:errmsg())
-    assert(db:exec(schema("TEMPORARY TABLE", "peers")) == sqlite3.OK, db:errmsg())
+    assert(db:exec(schema("TABLE", "mem.peers")) == sqlite3.OK, db:errmsg())
     
     --copy previously known peers
-    assert(db:exec("INSERT INTO peers SELECT * FROM stored_peers") == sqlite3.OK, db:errmsg())
+    assert(db:exec("INSERT INTO mem.peers SELECT * FROM stored_peers") == sqlite3.OK, db:errmsg())
     
     local numpeers
-    for row in db:urows("SELECT count(*) FROM peers;") do
+    for row in db:urows("SELECT count(*) FROM mem.peers;") do
       numpeers = row
     end
-    log:debug("loaded %i previously seen peers", numpeers)
+    log:debug("loaded %i previously seen mem.peers", numpeers)
     
-  sql.store = "INSERT OR IGNORE INTO peers "..
+  sql.store = "INSERT OR IGNORE INTO mem.peers "..
               "      (address, port, last_received, last_sent, last_keepalive_sent, last_keepalive_received) "..
               "VALUES(      ?,    ?,             ?,         ?,                   ?,                       ?)"
-  sql.find = "SELECT * FROM peers WHERE address=? AND port=? LIMIT 1"
-  sql.get8_except = "SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - ? "..
+  sql.find = "SELECT * FROM mem.peers WHERE address=? AND port=? LIMIT 1"
+  sql.get8_except = "SELECT * FROM mem.peers WHERE last_keepalive_received > datetime('now') - ? "..
     "AND address !=? AND port != ? ORDER BY RANDOM() LIMIT 8"
-  sql.get8 = "SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - ? ORDER BY RANDOM() LIMIT 8"
-  sql.get_active_to_keepalive="SELECT * FROM peers WHERE last_keepalive_received > datetime('now') - ? "..
+  sql.get8 = "SELECT * FROM mem.peers WHERE last_keepalive_received > datetime('now') - ? ORDER BY RANDOM() LIMIT 8"
+  sql.get_active_to_keepalive="SELECT * FROM mem.peers WHERE last_keepalive_received > datetime('now') - ? "..
     "AND last_keepalive_received < datetime('now') - ? ORDER BY RANDOM()"
-  sql.get_active_count = "SELECT COUNT(*) FROM peers WHERE last_keepalive_received > datetime('now') - ?"
-  sql.update_keepalive_ping = "UPDATE peers SET last_keepalive_received = ?, ping = ? WHERE address = ? AND port = ?"
-  sql.get_for_bootstrap = "SELECT * FROM peers WHERE tcp_in_use != 1 AND last_keepalive_received NOT NULL "..
+  sql.get_active_count = "SELECT COUNT(*) FROM mem.peers WHERE last_keepalive_received > datetime('now') - ?"
+  sql.update_keepalive_ping = "UPDATE mem.peers SET last_keepalive_received = ?, ping = ? WHERE address = ? AND port = ?"
+  sql.get_for_bootstrap = "SELECT * FROM mem.peers WHERE tcp_in_use != 1 AND last_keepalive_received NOT NULL "..
     "AND last_keepalive_received > datetime('now') - ? ORDER BY bootstrap_score DESC, ping ASC LIMIT ?"
   for k, v in pairs(sql) do
     sql[k] = assert(db:prepare(v), "SQL Error for " ..k..":  " .. tostring(db:errmsg()))
   end
   
   for _, v in pairs{"last_received", "last_sent", "last_keepalive_sent", "last_keepalive_received", "bootstrap_score", "tcp_in_use"} do
-    sql_peer_update_num[v] = assert(db:prepare("UPDATE peers SET " .. v.." = ? WHERE address = ? AND port = ?"), db:errmsg())
+    sql_peer_update_num[v] = assert(db:prepare("UPDATE mem.peers SET " .. v.." = ? WHERE address = ? AND port = ?"), db:errmsg())
   end
     
     setmetatable(Peer, PeerDB_meta)
   end,
   shutdown = function()
     --save previously known peers
-    assert(db:exec("INSERT OR REPLACE INTO stored_peers SELECT * FROM peers") == sqlite3.OK, db:errmsg())
+    assert(db:exec("INSERT OR REPLACE INTO stored_peers SELECT * FROM mem.peers") == sqlite3.OK, db:errmsg())
     assert(db:exec("UPDATE stored_peers SET tcp_in_use = 0, bootstrap_score = 0") == sqlite3.OK, db:errmsg()) --clear all tcp_in_use lock flags and bootstrap scores
     local numpeers
-    for row in db:urows("SELECT count(*) FROM peers;") do
+    for row in db:urows("SELECT count(*) FROM mem.peers;") do
       numpeers = row
     end
     log:debug("stored %i seen peers", numpeers)

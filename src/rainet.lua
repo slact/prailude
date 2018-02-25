@@ -9,6 +9,7 @@ local Account = require "prailude.account"
 local Message = require "prailude.message"
 local Block = require "prailude.block"
 local Vote = require "prailude.vote"
+local Util = require "prailude.util"
 
 local uv = require "luv"
 local mm = require "mm"
@@ -124,6 +125,7 @@ end
 function Rainet.bootstrap()
   return coroutine.wrap(function()
     --let's gather some peers first. 50 active peers should be enough
+    local t0 = os.time()
     local min_count, count = 50
     while true do
       count = Peer.get_active_count()
@@ -134,32 +136,53 @@ function Rainet.bootstrap()
         break
       end
     end
-    
+    --local t1=os.time()
     local frontiers = Rainet.fetch_frontiers()
-    
+    --local t2=os.time()
     for _, frontier in pairs(frontiers) do
       Rainet.bulk_pull_accounts(frontier)
     end
+    local t3 = os.time()
+    log:debug("Bootstrap took %imin %isec", math.floor((t3-t0)/60), (t3-t0)%60)
     
     --then do something else
   end)()
 end
 
-function Rainet.bulk_pull_accounts(frontier)
+function Rainet.bulk_pull_accounts(frontier_pull_id)
   --print("now bulk_pull some accounts", #frontier)
   Account =  require "prailude.account"
   local min_speed = 3 --blocks/sec
   local active_peers = {}
-  local frontier_size = #frontier
+  local frontier_size = Frontier.get_pull_size(frontier_pull_id)
   local total_blocks_fetched = 0
   
-  local account_frontier_score_delta = 1/#frontier
+  local account_frontier_score_delta = 1/frontier_size
   
   local frontier_last_fetched_from_peer=setmetatable({}, {__mode="k"})
+  local source; do
+    local limit, offset = 50000, 0
+    source = Util.BatchSource {
+      produce = function()
+        local batch = Frontier.get_range(frontier_pull_id, limit, offset)
+        offset = offset + limit
+        return batch
+      end
+    }
+  end
+  
+  local sink = Util.BatchSink {
+    batch_size = 50000,
+    consume = function(batch)
+      Block.batch_store(batch, "bootstrap")
+    end
+  }
   
   local ok, failed, errs = coroutine.workpool({
-    work = frontier,
-    max_workers = 100,
+    work = function()
+      return source:next()
+    end,
+    max_workers = 70,
     retry = 4,
     progress = function(active_workers, work_done, _, work_failed)
       local bus_data = {
@@ -189,7 +212,7 @@ function Rainet.bulk_pull_accounts(frontier)
             slow_in_a_row = slow_in_a_row + 1
           end
         else
-          active_peers[peer].blocks_pulled = blocks_so_far
+          active_peers[peer].blocks_pulled = #blocks_so_far
         end
       end)
       
@@ -204,7 +227,11 @@ function Rainet.bulk_pull_accounts(frontier)
             total_blocks_fetched = total_blocks_fetched + #acct_blocks
             peer:update_bootstrap_score(account_frontier_score_delta)
             --print("upgrade")
-            return {peer = peer, frontier = acct_frontier, blocks = #acct_blocks, frontier_found = frontier_hash_found_or_err}
+            for _, block in ipairs(acct_blocks) do
+              -- block.source_peer = tostring(peer) TODO
+              sink:add(block)
+            end
+            return #acct_blocks
           else
             --badsig
             local  readable_acct = Account.to_readable(acct_frontier.account)
@@ -323,10 +350,11 @@ function Rainet.fetch_frontiers()
       --log:debug("bootstrap: starting frontier pull from %s", peer)
       
       active_peers[peer] = {}
-      local frontiers, err = Frontier.fetch(peer, function(frontiers_so_far, progress)
+      local frontiers, err = Frontier.fetch(peer, function(frontiers_so_far_count, progress)
         --watchdog checker for frontier fetch progress
-        local frontiers_per_sec = #frontiers_so_far - prev_frontiers_count
-        prev_frontiers_count = #frontiers_so_far
+        
+        local frontiers_per_sec = frontiers_so_far_count - prev_frontiers_count
+        prev_frontiers_count = frontiers_so_far_count
         if frontiers_per_sec < min_frontiers_per_sec then
           --too slow
           times_below_min_rate = times_below_min_rate + 1
@@ -336,14 +364,14 @@ function Rainet.fetch_frontiers()
         elseif progress > 0.2 and not frontier_pull_size_estimated then
           --is this pull going to be too small (i.e. from an unsynced node)?
           frontier_pull_size_estimated = true
-          if #frontiers_so_far * 1/progress < 0.8 * largest_frontier_pull_size then
+          if frontiers_so_far_count * 1/progress < 0.8 * largest_frontier_pull_size then
             --too small
-            return false, ("frontier is too small (circa %.0f, expected %.0f)"):format(#frontiers_so_far * 1/progress, largest_frontier_pull_size)
+            return false, ("frontier is too small (circa %.0f, expected %.0f)"):format(frontiers_so_far_count * 1/progress, largest_frontier_pull_size)
           end
         end
         --track statistics
         active_peers[peer].rate = frontiers_per_sec
-        active_peers[peer].total = #frontiers_so_far
+        active_peers[peer].total = frontiers_so_far_count
         active_peers[peer].progress = progress
         return true
       end)
