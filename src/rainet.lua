@@ -53,16 +53,18 @@ local function keepalive()
       return log:warn("rainet: message:receive:keepalive failed from peer %s: %s", peer, msg)
     end
     peer:update_keepalive_ping()
-    local inpeer
-    local now = os.time()
-    local keepalive_cutoff = now - Peer.keepalive_interval
-    if (peer.last_keepalive_sent or 0) < keepalive_cutoff then
-      peer:send(Message.new("keepalive", {peers = Peer.get8(peer)}))
-    end
-    for _, peer_data in ipairs(msg.peers) do
-      inpeer = Peer.get(peer_data)
-      if (inpeer.last_keepalive_sent or 0) < keepalive_cutoff then
-        inpeer:send(Message.new("keepalive", {peers = Peer.get8(inpeer)}))
+    if Peer.get_active_count() < config.node.max_peers then
+      local inpeer
+      local now = os.time()
+      local keepalive_cutoff = now - Peer.keepalive_interval
+      if (peer.last_keepalive_sent or 0) < keepalive_cutoff then
+        peer:send(Message.new("keepalive", {peers = Peer.get8(peer)}))
+      end
+      for _, peer_data in ipairs(msg.peers) do
+        inpeer = Peer.get(peer_data)
+        if (inpeer.last_keepalive_sent or 0) < keepalive_cutoff then
+          inpeer:send(Message.new("keepalive", {peers = Peer.get8(inpeer)}))
+        end
       end
     end
   end)
