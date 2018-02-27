@@ -181,7 +181,7 @@ return {
     for row in db:urows("SELECT count(*) FROM mem.peers;") do
       numpeers = row
     end
-    log:debug("loaded %i previously seen mem.peers", numpeers)
+    log:debug("loaded %i previously seen peers", numpeers)
     
   sql.store = "INSERT OR IGNORE INTO mem.peers "..
               "      (address, port, last_received, last_sent, last_keepalive_sent, last_keepalive_received) "..

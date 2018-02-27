@@ -125,6 +125,7 @@ end
 function Rainet.bootstrap()
   return coroutine.wrap(function()
     --let's gather some peers first. 50 active peers should be enough
+    Block.clear_bootstrap()
     local t0 = os.time()
     local min_count, count = 50
     while true do
@@ -172,9 +173,13 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
   end
   
   local sink = Util.BatchSink {
-    batch_size = 50000,
+    batch_size = 10000,
     consume = function(batch)
+      --log:debug("start DB save of %i items", #batch)
+      local gettime = require "prailude.util.lowlevel".gettime
+      local t0=gettime()
       Block.batch_store(batch, "bootstrap")
+      log:debug("DB save took %.3f sec", gettime()-t0)
     end
   }
   
@@ -182,7 +187,7 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
     work = function()
       return source:next()
     end,
-    max_workers = 70,
+    max_workers = 40,
     retry = 4,
     progress = function(active_workers, work_done, _, work_failed)
       local bus_data = {
@@ -201,48 +206,39 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
       active_peers[peer] = {frontier = acct_frontier, blocks_pulled = 0}
       frontier_last_fetched_from_peer[acct_frontier] = peer
       local prev_blocks, slow_in_a_row = 0, 0
-      local acct_blocks, frontier_hash_found_or_err = Account.bulk_pull(acct_frontier, peer, function(blocks_so_far)
-        --print(tostring(peer), #blocks_so_far, prev_blocks)
-        local blocks_fetched = #blocks_so_far - prev_blocks
-        prev_blocks = #blocks_so_far
-        if blocks_fetched < min_speed then -- too slow
-          if slow_in_a_row > 0 then
-            return false, "account pull too slow"
-          else
-            slow_in_a_row = slow_in_a_row + 1
+      local acct_blocks_count, frontier_hash_found_or_err = Account.bulk_pull(acct_frontier, peer, {
+        consume = function(batch)
+          --blocks should have already been PoW and sig checked
+          for _, block in ipairs(batch) do
+            sink:add(block)
           end
-        else
-          active_peers[peer].blocks_pulled = #blocks_so_far
+          return #batch
+        end,
+        watchdog = function(blocks_so_far_count)
+          --print(tostring(peer), blocks_so_far_count, prev_blocks)
+          local blocks_fetched = blocks_so_far_count - prev_blocks
+          prev_blocks = blocks_so_far_count
+          if blocks_fetched < min_speed then -- too slow
+            if slow_in_a_row > 0 then
+              return false, "account pull too slow"
+            else
+              slow_in_a_row = slow_in_a_row + 1
+            end
+          else
+            active_peers[peer].blocks_pulled = blocks_so_far_count
+          end
         end
-      end)
+      })
       
       --print("bulk   pull... done")
       active_peers[peer]=nil
-      if acct_blocks then
+      
+      if acct_blocks_count then
         if frontier_hash_found_or_err then
-          --all right?
-          local all_valid, block_valid = Block.batch_verify_signatures(acct_blocks, acct_frontier.account)
-          if all_valid then
-            --everything's okay
-            total_blocks_fetched = total_blocks_fetched + #acct_blocks
-            peer:update_bootstrap_score(account_frontier_score_delta)
-            --print("upgrade")
-            for _, block in ipairs(acct_blocks) do
-              -- block.source_peer = tostring(peer) TODO
-              sink:add(block)
-            end
-            return #acct_blocks
-          else
-            --badsig
-            local  readable_acct = Account.to_readable(acct_frontier.account)
-            for i, v in ipairs(block_valid) do
-              if not v then
-                log:warn("bootstrap: got bad-sig block from %s for acct %s: %s", tostring(peer), readable_acct, acct_blocks[i]:to_json())
-              end
-            end
-            peer:update_bootstrap_score(- 100 * account_frontier_score_delta)
-            return nil, "bad signature in account blocks"
-          end
+          --everything's okay
+          total_blocks_fetched = total_blocks_fetched + acct_blocks_count
+          peer:update_bootstrap_score(account_frontier_score_delta)
+          return acct_blocks_count
         else
           --assume it's the peer's fault we didn't find the frontier hash
           -- ATTACK VECTOR: this assumes we trust the frontier, which means an attacker
@@ -251,21 +247,23 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
           print("peer", tostring(peer), "account found, but without frontier")
           return nil, "account found, but without frontier"
         end
-      else
-        --print("peer", tostring(peer), frontier_hash_found_or_err)
-        if frontier_hash_found_or_err == "Connection refused" or frontier_hash_found_or_err == "No route to host" then
-          peer:update_bootstrap_score(-1)
-        elseif frontier_hash_found_or_err == "account pull too slow" then
-          print("peer", tostring(peer), "too slow")
+      else -- there was an error
+        local err = frontier_hash_found_or_err
+        log:debug("bootstrap:  acct pull %s from peer %s error %s", Account.to_readable(acct_frontier.account), tostring(peer), err)
+        if err:match("^bad signature") or err:match("^bad PoW") or err:match("^bad block") then
+          peer:update_bootstrap_score(- 100 * account_frontier_score_delta)
+        elseif err == "account pull too slow" then
           peer:update_bootstrap_score(- 10 * account_frontier_score_delta)
+        elseif err == "Connection refused" or err == "No route to host" then
+          peer:update_bootstrap_score(-1)
         else
-          print("peer", tostring(peer), frontier_hash_found_or_err)
           peer:update_bootstrap_score(-account_frontier_score_delta)
         end
-        return nil, frontier_hash_found_or_err
+        return nil, err
       end
     end
   })
+  sink:finish()
   
   local bus_data = {
     complete = true,

@@ -55,9 +55,11 @@ function Account.to_readable(raw)
   return util.unpack_account(raw)
 end
 
-function Account.bulk_pull(frontier, peer, watchdog)
-  Block = require "prailude.block" --late require
-  
+function Account.bulk_pull(frontier, peer, opt)
+  if not Block then
+    Block = require "prailude.block" --late require
+  end
+  opt = opt or {}
   assert(coroutine.running(), "Account.bulk_pull must be called in a coroutine")
   local wanted_frontier = frontier.frontier
   local acct = Account.get(frontier.account)
@@ -66,13 +68,59 @@ function Account.bulk_pull(frontier, peer, watchdog)
     account = acct.id,
     frontier = acct.frontier
   })
+  local blocks_so_far_count = 0
   
-  local blocks_so_far = {}
-  
+  local watchdog = opt.watchdog
   local function watchdog_wrapper()
-    return watchdog(blocks_so_far)
+    return watchdog(blocks_so_far_count)
   end
   local frontier_hash_found = false
+  
+  local consume, result
+  do
+    local pubkey = acct.id
+    local function checkbatch(batch)
+      for _, block in ipairs(batch) do
+        if not block:verify_PoW() then
+          log:warn("bootstrap: got bad-PoW block from %s for acct %s: %s", tostring(peer), tostring(acct), block:to_json())
+          return nil, "bad PoW in batch_verify_signaturesaccount blocks"
+        end
+      end
+      local all_valid, block_valid = Block.batch_verify_signatures(batch, pubkey)
+      if not all_valid then
+        for _, v in ipairs(block_valid) do
+          if not v then
+            log:warn("bootstrap: got bad-sig block from %s for acct %s: %s", tostring(peer), tostring(acct), v.block:to_json())
+          end
+        end
+        return nil, "bad signature in account blocks"
+      else
+        return true
+      end
+    end
+    if not opt.consume then
+      local blocks_so_far = {}
+      consume = function(batch)
+        local ok, err = checkbatch(batch)
+        if not ok then return nil, err end
+        for _, b in ipairs(batch) do
+          table.insert(blocks_so_far, b)
+        end
+      end
+      result = function()
+        return blocks_so_far, frontier_hash_found
+      end
+    else
+      consume = function(batch)
+        local ok, err = checkbatch(batch)
+        if not ok then return nil, err end
+        return opt.consume(batch, frontier, peer)
+      end
+      result = function()
+        return blocks_so_far_count, frontier_hash_found
+      end
+    end
+  end
   
   return peer:tcp_session("bulk pull", function(tcp)
     tcp:write(bulk_pull_message:pack())
@@ -96,18 +144,25 @@ function Account.bulk_pull(frontier, peer, watchdog)
           return nil, "account pull produced 0 blocks"
         else
           --mm(fresh_blocks)
-          local block, err
-          for _, rawblock in ipairs(fresh_blocks) do
-            --mm(rawblock)
-            block, err = Block.get(rawblock)
+          local ok, block, err
+          for i, blockdata in ipairs(fresh_blocks) do
+            --mm(blockdata)
+            block, err = Block.new(blockdata)
             if block then
               if not frontier_hash_found and block.hash == wanted_frontier then
                 frontier_hash_found = true
               end
-              table.insert(blocks_so_far, block)
+              rawset(fresh_blocks, i, block)
             else
-              log:warn("Found bad block from peer %s: %s (%s)", tostring(peer),  Block.new(rawblock):to_json(), err)
+              log:warn("Found bad block from peer %s: %s (%s)", tostring(peer),  Block.new(blockdata):to_json(), err)
+              return nil, "bad block: " .. err
             end
+          end
+          
+          blocks_so_far_count = blocks_so_far_count + #fresh_blocks
+          ok, err = consume(fresh_blocks)
+          if not ok then
+            return  nil, err or "consume function returned nil but no error"
           end
           
         end
@@ -121,7 +176,7 @@ function Account.bulk_pull(frontier, peer, watchdog)
     
     --log:debug("finished getting blocks for %s (%7d total) from %s", Account.to_readable(frontier.account), #blocks_so_far, peer)
     -- no more blocks here
-    return blocks_so_far, frontier_hash_found
+    return result()
     
   end, watchdog_wrapper)
 end

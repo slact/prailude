@@ -7,6 +7,7 @@ local generate_block_PoW = Util.work.generate
 local verify_block_PoW_test = Util.work.verify_test
 local blake2b_hash = Util.blake2b.hash
 local verify_edDSA_blake2b_signature = Util.ed25519.verify
+local tinsert = table.insert
 
 local Account = require "prailude.account"
 local mm = require "mm"
@@ -52,10 +53,10 @@ local Block_instance = {
   verify = function(self)
     if not self:verify_PoW() then
       return nil, "insufficient proof of work"
-    elseif not self:verify_signature() then
-      return nil, "bad signature"
-    elseif not self:verify_consistency() then
-      return nil, "block inconsistent with ledger"
+    --elseif not self:verify_signature() then
+    --  return nil, "bad signature"
+    --elseif not self:verify_consistency() then
+    --  return nil, "block inconsistent with ledger"
     else
       return true
     end
@@ -70,7 +71,17 @@ local Block_instance = {
     end
   end,
   verify_PoW = function(self)
-    return verify_block_PoW(self:PoW_hashable(), self.work)
+    local valid = self.valid
+    if valid == "PoW" or valid == "signature" or valid == "ledger" or valid == "confirmed" then
+      --already checked
+      return true
+    else
+      local ok, err = verify_block_PoW(self:PoW_hashable(), self.work)
+      if ok then
+        self.valid = "PoW"
+      end
+      return ok, err
+    end
   end,
   verify_test_PoW = function(self)
     return verify_block_PoW_test(self:PoW_hashable(), self.work)
@@ -81,13 +92,16 @@ local Block_instance = {
     return pow
   end,
   verify_signature = function(self, account_raw)
-    if self.type == "open" then
-      return verify_edDSA_blake2b_signature(self.hash, self.signature, account_raw or self.account)
-    elseif account_raw then
-      return verify_edDSA_blake2b_signature(self.hash, self.signature, account_raw)
+    local valid = self.valid
+    if valid == "signature" or valid == "ledger" or valid == "confirmed" then
+      --alredy checked
+      return true
     else
-      return true -- for now
-      --error("not implemented yet")
+      local ok, err = verify_edDSA_blake2b_signature(self.hash, self.signature, account_raw or self.account)
+      if ok then
+        self.valid = "signature"
+      end
+      return ok, err
     end
   end,
   verify_consistency = function(self)
@@ -121,8 +135,8 @@ local Block_instance = {
     return CJSON.encode(data)
   end,
   
-  store = function(self)
-    return Block.store(self)
+  store = function(self, opt)
+    return Block.store(self, opt)
   end
   
 }
@@ -156,6 +170,20 @@ function Block.new(block_type, data)
     mm(data)
     error("invalid block type " .. tostring(data.type))
   end
+  
+  local valid = data.valid
+  if valid == 0 then
+    data.valid = nil
+  elseif valid == 1 then
+    data.valid = "PoW"
+  elseif valid == 2 then
+    data.valid = "signature"
+  elseif valid == 3 then
+    data.valid = "ledger"
+  elseif valid == 4 then
+    data.valid = "confirmed"
+  end
+  
   return setmetatable(data, block_meta)
 end
 
@@ -174,7 +202,7 @@ local block_cache = {}
 for _, v in pairs{"open", "change", "receive", "send"} do
   block_cache[v]=setmetatable({}, {__mode="v"})
 end
-local cache_enabled = true
+local cache_enabled = false
 
 function Block.unpack_cache_enabled(val)
   if val ~= nil then
@@ -237,16 +265,30 @@ function Block.from_json(json_string)
   return block
 end
 
+
 function Block.batch_verify_signatures(blocks, account_pubkey)
   local batch = {}
+  local valid
   for i, block in ipairs(blocks) do
-    rawset(batch, i, {block.hash, block.signature, account_pubkey})
+    valid = block.valid
+    if not valid or (valid ~= "PoW" and valid ~= "signature" and valid ~= "ledger" and valid ~= "confirmed") then
+      tinsert(batch, {block.hash, block.signature, account_pubkey, i=i, block=block})
+    end
   end
   local all_valid = Util.ed25519.batch_verify(batch)
   if all_valid then
+    if #batch == #blocks then --a little optimization
+      for _, block in ipairs(blocks) do
+        block.valid = "PoW"
+      end
+    else
+      for _, b in ipairs(batch) do
+        blocks[b.i].valid = "PoW"
+      end
+    end
     return true
   else
-    local valid = {}
+    valid = {}
     for i, v in ipairs(batch) do
       rawset(valid, i, rawget(v, "valid"))
     end

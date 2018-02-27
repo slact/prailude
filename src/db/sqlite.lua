@@ -12,13 +12,8 @@ local subdbs = {
 local dbs = {}
 local DB = {}
 
-function DB.open(name, opt)
-  assert(not dbs[name], "db with name " .. name .. " already exists")
-  local db, err_code, err_msg = sqlite3.open(opt.db_file or name..".db")
-  if not db then
-    error("error opening db  " .. name .. ": " .. (err_msg or err_code))
-  end
-  for pragma, val in pairs(opt.pragma) do
+function DB.pragma(db, pragma_list)
+  for pragma, val in pairs(pragma_list) do
     if val == false then
       val = "OFF"
     elseif val == true then
@@ -28,6 +23,15 @@ function DB.open(name, opt)
     end
     assert(db:exec(("PRAGMA %s = %s"):format(pragma, tostring(val))) == sqlite3.OK, "PRAGMA " .. pragma .. " error: " .. db:errmsg())
   end
+end
+
+function DB.open(name, opt)
+  assert(not dbs[name], "db with name " .. name .. " already exists")
+  local db, err_code, err_msg = sqlite3.open(opt.db_file or name..".db")
+  if not db then
+    error("error opening db  " .. name .. ": " .. (err_msg or err_code))
+  end
+  DB.pragma(db, opt.pragma)
   dbs[name]=db
   return db
 end
@@ -41,14 +45,20 @@ function DB.initialize()
   local db = DB.open("raiblocks", {
     pragma = {
       synchronous = false, --don't really care if the db lags behind on crash
-      journal_mode = "OFF",
+      journal_mode = "TRUNCATE",
       temp_store = "FILE",
       foreign_keys = "OFF",
       locking_mode = "EXCLUSIVE",
-      cache_size = "100000"
+      cache_size = "1000000"
     }
   })
   assert(db:exec("ATTACH DATABASE ':memory:' as mem") == sqlite3.OK, db:errmsg())
+  assert(db:exec("ATTACH DATABASE 'bootstrap.db' as bootstrap") == sqlite3.OK, db:errmsg())
+  DB.pragma(db, {
+    ["bootstrap.synchronous"] = false, --don't really care if the db lags behind on crash
+    ["bootstrap.journal_mode"] = false,
+    ["bootstrap.foreign_keys"] = false,
+  })
   
   for _, subdb in ipairs(subdbs) do
     subdb.initialize(db)
