@@ -29,11 +29,11 @@ There's still a lot of work to do, but much has also been completed. **BONUS** l
     * Bootstrapping
       * Frontier fetch - **DONE**  
         Frontiers are fetched from several peers in parallel, with detailed progress reports. Frontiers that are too small are detected in the first second of data transfer and aborted to move on to better peers.
-      * Account pulls - **80%**  
+      * Account pulls - **DONE**  
         Frontiers get loaded from the faster peers in parallel, and peers failing to respond with useful data are de-prioritized.
       * Fork resultion - **TODO**  
         Forks encountered during bootstrapping need to be resolved before proceeding. There are several heuristics available to do this, as well as using `confirm_req`s to resolve specific blocks when the heuristics fail. This is one of the most complex parts of the Nano protocol.
-      * Block verification - **TODO**  
+      * Block verification - **20%**  
         Once loaded, blocks must be verified and stored in the database. Any issues here must be resolved  before considering the node as synced.
       * Process pending-blocks backlog - **TODO**  
         While we were bootstrapping, a whole bunch of blocks make their wait to us on the network.
