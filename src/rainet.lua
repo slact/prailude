@@ -139,9 +139,10 @@ function Rainet.bootstrap()
         break
       end
     end
-    --local t1=os.time()
-    local frontiers = Rainet.fetch_frontiers()
-    --local t2=os.time()
+    
+    local frontiers = Rainet.fetch_frontiers(3)
+    
+    
     for _, frontier in pairs(frontiers) do
       Rainet.bulk_pull_accounts(frontier)
     end
@@ -154,7 +155,6 @@ end
 
 function Rainet.bulk_pull_accounts(frontier_pull_id)
   --print("now bulk_pull some accounts", #frontier)
-  Account =  require "prailude.account"
   local min_speed = 3 --blocks/sec
   local active_peers = {}
   local frontier_size = Frontier.get_pull_size(frontier_pull_id)
@@ -162,14 +162,23 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
   
   local account_frontier_score_delta = 1/frontier_size
   
-  local frontier_last_fetched_from_peer=setmetatable({}, {__mode="k"})
+  local retry={}
   local source; do
     local limit, offset = 50000, 0
     source = Util.BatchSource {
       produce = function()
         local batch = Frontier.get_range(frontier_pull_id, limit, offset)
         offset = offset + limit
-        return batch
+        if #batch > 0 then
+          return batch
+        else
+          --retry the stuff that timed out
+          for v, _ in pairs(retry) do
+            table.insert(batch, v)
+          end
+          retry = {}
+          return batch
+        end
       end
     }
   end
@@ -189,8 +198,8 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
     work = function()
       return source:next()
     end,
-    max_workers = 40,
-    retry = 4,
+    max_workers = 50,
+    retry = 2,
     progress = function(active_workers, work_done, _, work_failed)
       local bus_data = {
         complete = false,
@@ -199,14 +208,13 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
         accounts_fetched = #work_done,
         accounts_failed = #work_failed
       }
-      log:debug("bulk pull: using %i workers, finished %i of %i accounts [%3.2f%%] (%i blocks) (%i failed attempts)", active_workers, #work_done, frontier_size, 100 * #work_done / frontier_size, total_blocks_fetched, #work_failed)
+      log:debug("bulk pull: using %i workers, finished %i of %i accounts [%3.2f%%] (%i blocks) (%i failed attempts)", active_workers, #work_done - #work_failed, frontier_size, 100 * #work_done / frontier_size, total_blocks_fetched, #work_failed)
       
       Bus.pub("bulk_pull:progress", bus_data)
     end,
     worker = function(acct_frontier)
       local peer = assert(Peer.get_best_bootstrap_peer())
       active_peers[peer] = {frontier = acct_frontier, blocks_pulled = 0}
-      frontier_last_fetched_from_peer[acct_frontier] = peer
       local prev_blocks, slow_in_a_row = 0, 0
       local acct_blocks_count, frontier_hash_found_or_err = Account.bulk_pull(acct_frontier, peer, {
         consume = function(batch)
@@ -222,6 +230,7 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
           prev_blocks = blocks_so_far_count
           if blocks_fetched < min_speed then -- too slow
             if slow_in_a_row > 0 then
+              retry[acct_frontier]=true
               return false, "account pull too slow"
             else
               slow_in_a_row = slow_in_a_row + 1
@@ -245,7 +254,7 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
           --assume it's the peer's fault we didn't find the frontier hash
           -- ATTACK VECTOR: this assumes we trust the frontier, which means an attacker
           -- that poisons the frontier will eventually gain bootstrap-score over legit peers
-          peer:update_bootstrap_score(-10 * account_frontier_score_delta)
+          peer:update_bootstrap_score(-100 * account_frontier_score_delta)
           print("peer", tostring(peer), "account found, but without frontier")
           return nil, "account found, but without frontier"
         end
@@ -280,9 +289,9 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
   return ok, failed, errs
 end
 
-function Rainet.fetch_frontiers()
+function Rainet.fetch_frontiers(min_good_frontier_requests)
   local min_frontiers_per_sec = 200
-  local min_good_frontier_requests = 3
+  min_good_frontier_requests = min_good_frontier_requests or 3
   
   local good_frontier_requests = 0
   local active_peers = {}
@@ -296,10 +305,14 @@ function Rainet.fetch_frontiers()
       return false
     else
       --the work is done. stop all active peers
+      local peers_to_stop = {}
       for peer, _ in pairs(active_peers) do
         if peer.tcp then
-          peer.tcp:stop("frontier fetch finished")
+          table.insert(peers_to_stop, peer)
         end
+      end
+      for _, peer in ipairs(peers_to_stop) do
+        peer.tcp:stop("frontier fetch finished")
       end
       return true
     end

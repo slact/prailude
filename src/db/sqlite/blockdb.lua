@@ -47,15 +47,26 @@ end
 local sql={}
 
 local cache = setmetatable({}, {__mode="v"})
+local bootstrap_cache = setmetatable({}, {__mode="v"})
 local cache_enabled = false
 
 local db
 
 local BlockDB_meta = {__index = {
   find = function(hash, opt)
-    local block = cache_enabled  and rawget(cache, hash) or nil
+    local block, stmt
+    if opt=="bootstrap" then
+      if cache_enabled then
+        block = rawget(bootstrap_cache, hash)
+      end
+      stmt = sql.bootstrap_block_get
+    else
+      if cache_enabled then
+        block = rawget(cache, hash)
+      end
+      stmt = sql.block_get
+    end
     if block == nil then
-      local stmt = opt=="bootstrap" and sql.bootstrap_block_get or sql.block_get
       stmt:bind(1, hash)
       block = stmt:nrows()(stmt)
       --TODO: check for sqlite3.BUSY and such responses
@@ -121,15 +132,23 @@ local BlockDB_meta = {__index = {
     stmt:reset()
     if cache_enabled then
       --update cache
-      rawset(cache, self.hash, self)
+      if opt ==  "bootstrap" then
+        rawset(bootstrap_cache, self.hash, self)
+      else
+        rawset(cache, self.hash, self)
+      end
     end
     
   end,
   
   batch_store = function(batch, opt)
+    local cachestore = opt == "bootstrap" and bootstrap_cache or cache
     assert(db:exec("BEGIN EXCLUSIVE TRANSACTION") == sqlite3.OK, db:errmsg())
     for _, block in ipairs(batch) do
       block:store(opt)
+      if cache_enabled then
+        rawset(cachestore, block.hash, block)
+      end
     end
     assert(db:exec("COMMIT TRANSACTION") == sqlite3.OK, db:errmsg())
   end,

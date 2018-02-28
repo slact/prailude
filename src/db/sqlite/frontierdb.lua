@@ -41,6 +41,7 @@ local FrontierDB_meta = {__index = {
   get_pull_size = function(id)
     local stmt = sql.frontier_pull_size
     stmt:bind(1, id)
+    print(id)
     return assert(stmt:urows()(stmt), db:errmsg())
   end,
   
@@ -85,19 +86,20 @@ return {
     Frontier = require "prailude.frontier"
     db = db_ref
     --assert(db:exec(schema("TABLE", "frontier")) == sqlite3.OK, db:errmsg())
-    assert(db:exec(schema("TEMPORARY TABLE", "bootstrap_frontier")) == sqlite3.OK, db:errmsg())
+    assert(db:exec(schema("TABLE", "bootstrap.frontier")) == sqlite3.OK, db:errmsg())
+    assert(db:exec("DELETE FROM bootstrap.frontier") == sqlite3.OK, db:errmsg())
     
-    sql.frontier_store = assert(db:prepare("INSERT OR REPLACE INTO bootstrap_frontier " ..
+    sql.frontier_store = assert(db:prepare("INSERT OR REPLACE INTO bootstrap.frontier " ..
       "      (account, frontier, pull_id) " ..
       "VALUES(      ?,        ?,       ?);"), db:errmsg())
     
-    sql.frontier_get = assert(db:prepare("SELECT * FROM bootstrap_frontier WHERE pull_id = ?"), db:errmsg())
+    sql.frontier_get = assert(db:prepare("SELECT * FROM bootstrap.frontier WHERE pull_id = ?"), db:errmsg())
     
-    sql.frontier_pull_size = assert(db:prepare("SELECT count(*) FROM bootstrap_frontier WHERE pull_id = ?"), db:errmsg())
+    sql.frontier_pull_size = assert(db:prepare("SELECT count(*) FROM bootstrap.frontier WHERE pull_id = ?"), db:errmsg())
     
-    sql.frontier_delete_by_pull_id = assert(db:prepare("DELETE FROM bootstrap_frontier WHERE pull_id = ?"), db:errmsg())
+    sql.frontier_delete_by_pull_id = assert(db:prepare("DELETE FROM bootstrap.frontier WHERE pull_id = ?"), db:errmsg())
     
-    sql.frontier_get_range_from_peer = assert(db:prepare("SELECT * FROM bootstrap_frontier WHERE pull_id = ? ORDER BY account LIMIT ? OFFSET ?"), db:errmsg())
+    sql.frontier_get_range_from_peer = assert(db:prepare("SELECT * FROM bootstrap.frontier WHERE pull_id = ? ORDER BY account LIMIT ? OFFSET ?"), db:errmsg())
     
     setmetatable(Frontier, FrontierDB_meta)
   end,
