@@ -127,37 +127,45 @@ end
 function Rainet.bootstrap()
   return coroutine.wrap(function()
     --let's gather some peers first. 50 active peers should be enough
-    Block.clear_bootstrap()
+    
+    log:debug("bootstrap: preparing database...")
+    --Frontier.clear_bootstrap()
+    --Block.clear_bootstrap()
+    
     local t0 = os.time()
-    local min_count, count = 50
-    while true do
-      count = Peer.get_active_count()
-      if count < min_count then
-        log:debug("bootstrap: gathering at least %i peers, have %i", min_count, count)
-        Timer.delay(1000)
-      else
-        break
-      end
+    local min_count = 50
+    log:debug("bootstrap: connecting to peers...")
+    while Peer.get_active_count() < min_count do
+      log:debug("bootstrap: gathering at least %i peers, have %i so far", min_count, Peer.get_active_count())
+      Timer.delay(1000)
     end
     
-    local frontiers = Rainet.fetch_frontiers(3)
-    
-    
-    for _, frontier in pairs(frontiers) do
-      Rainet.bulk_pull_accounts(frontier)
+    do
+      log:debug("bootstrap: fetching frontiers...")
+      --Rainet.fetch_frontiers(3)
+      log:debug("bootstap: finding already synced frontiers...")
+      local already_synced = Frontier.delete_synced_frontiers()
+      log:debug("bootstrap: need to sync %i frontiers (%i already synced)", Frontier.get_size(), already_synced)
     end
+    
+    log:debug("bootstrap: gathering blocks... this will take a while...")
+    --Rainet.bulk_pull_accounts()
+    
+    --now start building from genesis
+    local genesis = Block.find(Block.genesis.hash, "bootstrap")
+    
+    
     local t3 = os.time()
     log:debug("Bootstrap took %imin %isec", math.floor((t3-t0)/60), (t3-t0)%60)
     
-    --then do something else
   end)()
 end
 
-function Rainet.bulk_pull_accounts(frontier_pull_id)
+function Rainet.bulk_pull_accounts()
   --print("now bulk_pull some accounts", #frontier)
   local min_speed = 3 --blocks/sec
   local active_peers = {}
-  local frontier_size = Frontier.get_pull_size(frontier_pull_id)
+  local frontier_size = Frontier.get_size()
   local total_blocks_fetched = 0
   
   local account_frontier_score_delta = 1/frontier_size
@@ -167,7 +175,7 @@ function Rainet.bulk_pull_accounts(frontier_pull_id)
     local limit, offset = 50000, 0
     source = Util.BatchSource {
       produce = function()
-        local batch = Frontier.get_range(frontier_pull_id, limit, offset)
+        local batch = Frontier.get_range(limit, offset)
         offset = offset + limit
         if #batch > 0 then
           return batch
@@ -317,7 +325,6 @@ function Rainet.fetch_frontiers(min_good_frontier_requests)
       return true
     end
   end
-  
   
   local frontiers_set, failed, errs = coroutine.workpool({
     work = function()

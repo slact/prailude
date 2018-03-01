@@ -18,6 +18,7 @@ local function schema(tbl_type, tbl_name)
     
     valid                 INTEGER NOT NULL DEFAULT 0,
     
+    genesis_distance      INTEGER, -- number of accounts to reach to genesis
     source_peer           TEXT,
     PRIMARY KEY(id)
   ) WITHOUT ROWID;
@@ -26,6 +27,7 @@ local function schema(tbl_type, tbl_name)
   CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_checked_idx    ON ]]..tbl..[[ (valid);
   CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_rep_idx        ON ]]..tbl..[[ (representative_acct);
   CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_balance_idx    ON ]]..tbl..[[ (balance);
+  CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_frontier_idx   ON ]]..tbl..[[ (frontier);
   ]]
 end
 
@@ -116,6 +118,14 @@ local AccountDB_meta = {__index = {
       stmt:reset()
     end
     return self
+  end,
+  
+  get_frontier_and_genesis_distance = function(account_id)
+    local stmt = sql.account_get_frontier
+    stmt:bind(1, account_id)
+    local frontier, distance = stmt:urows()(stmt)
+    stmt:reset()
+    return frontier, distance
   end
 }}
 
@@ -128,6 +138,8 @@ return {
     
     sql.account_get = assert(db:prepare("SELECT * FROM accounts WHERE id = ?"), db:errmsg())
     sql.bootstrap_account_get = assert(db:prepare("SELECT * FROM bootstrap_accounts WHERE id = ?"), db:errmsg())
+    
+    sql.account_get_frontier_and_genesis_distance = assert(db:prepare("SELECT frontier, genesis_distance FROM accounts WHERE id = ?"), db:errmsg())
     
     sql.account_set = assert(db:prepare("INSERT OR REPLACE INTO accounts " ..
       "      (id, frontier, num_blocks, representative_acct, balance_raw, balance, delegated_balance, valid, source_peer) " ..

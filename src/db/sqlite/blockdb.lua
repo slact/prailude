@@ -20,9 +20,10 @@ local schema = function(tbl_type, tbl_name, skip_aux_indices)
     n                    INTEGER, --block number in account (OPEN = 0)
     type                 TEXT,
     prev_block           TEXT, --send, receive, change
-    source               TEXT, --open, receive (source account)
+    source               TEXT, --open, receive (source block)
     representative       TEXT, --open, change  (rep account)
     destination          TEXT, --send (destination account)
+    timestamp            INTEGER,
     balance              TEXT,
 
     PRIMARY KEY(hash)

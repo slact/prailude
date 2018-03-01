@@ -4,6 +4,7 @@ local log = require "prailude.log"
 local coroutine = require "prailude.util.coroutine"
 local Peer = require "prailude.peer"
 local Message = require "prailude.message"
+local Account = require "prailude.account"
 local Parser = require "prailude.util.parser"
 local NilDB = require "prailude.db.nil" -- no database
 local BatchSink = require "prailude.util".BatchSink
@@ -84,6 +85,7 @@ function Frontier.fetch(peer, watchdog_callback)
         --got some new frontiers
         for _, frontier in ipairs(fresh_frontiers) do
           frontier.pull_id = pull_id
+          frontier.stored_frontier, frontier.genesis_distance = Account.get_frontier_and_genesis_distance(frontier.account)
           sink:add(Frontier.new(frontier))
         end
         frontiers_count_so_far = frontiers_count_so_far + #fresh_frontiers

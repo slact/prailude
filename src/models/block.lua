@@ -104,10 +104,7 @@ local Block_instance = {
       return ok, err
     end
   end,
-  verify_consistency = function(self)
-    if self then return true end
-    return true -- not implemented yet
-  end,
+  --verify_consistency --defined further down
   typecode = function(self)
     return block_typecode[self.type]
   end,
@@ -302,7 +299,7 @@ if main_net then
     source =         Util.hex_to_bytes("E89208DD038FBB269987689621D52292AE9C35941A7484756ECCED92A65093BA"),
     representative = Account.to_bytes("xrb_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3"),
     account =        Account.to_bytes("xrb_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3"),
-    work =           Util.hex_to_bytes("62f05417dd3fb691"):reverse(), --little endian
+    work =           Util.hex_to_bytes("62f05417dd3fb691"):reverse(), --little_endian
     signature =      Util.hex_to_bytes("9F0C933C8ADE004D808EA1985FA746A7" ..
                                        "E95BA2A38F867640F53EC8F180BDFE9E" ..
                                        "2C1268DEAD7C2664F356E37ABA362BC5" ..
@@ -317,7 +314,7 @@ else
     source =         Util.hex_to_bytes("B0311EA55708D6A53C75CDBF88300259C6D018522FE3D4D0A242E431F9E8B6D0"),
     representative = Account.to_bytes("xrb_3e3j5tkog48pnny9dmfzj1r16pg8t1e76dz5tmac6iq689wyjfpiij4txtdo"),
     account =        Account.to_bytes("xrb_3e3j5tkog48pnny9dmfzj1r16pg8t1e76dz5tmac6iq689wyjfpiij4txtdo"),
-    work =           Util.hex_to_bytes("9680625b39d3363d"):reverse(), --little endian
+    work =           Util.hex_to_bytes("9680625b39d3363d"):reverse(), --little_endian
     signature =      Util.hex_to_bytes("ECDA914373A2F0CA1296475BAEE40500"..
                                        "A7F0A7AD72A5A80C81D7FAB7F6C802B2"..
                                        "CC7DB50F5DD0FB25B2EF11761FA7344A"..
@@ -326,5 +323,96 @@ else
   assert(Block.genesis:pack())
 end
 assert(Block.genesis:verify())
+
+function Block_instance.get_send_amount(self)
+  assert(self.type == "send")
+  return self:get_balance() - Block.find(self.previous):get_balance()
+end
+
+local genesis_hash = Block.genesis.hash
+function Block_instance.get_balance(self)
+  if self.hash == genesis_hash then
+    return Balance.genesis
+  elseif self.balance then
+    return self.balance
+  elseif self.type == "open" then
+    return self.balance or self:sent_balance(self.source)
+  elseif self.type == "receive" then
+    local balance, parent, source
+    repeat
+      parent = self:find_parent()
+      source = Block.find(self.source)
+      assert(parent, "parent for receive block missing when trying to get balance")
+      assert(source, "source for receive block missing when trying to get balance")
+      balance = parent:get_balance() + source:get_send_amount()
+      if parent.balance then
+        return balance
+      end
+    until parent == nil
+    if balance then
+      return balance
+    else
+      return nil, "missing parent"
+    end
+  end
+end
+
+function Block_instance.get_account_id(self)
+  return assert(self.account)
+end
+
+function Block_instance.verify_consistency(self)
+  local valid = self.valid
+  if valid == "ledger" or valid == "confirmed" then
+    --already validated
+    return true
+  elseif self.hash == genesis_hash then
+    --genesis block
+    return true
+  elseif self.previous == genesis_hash then
+    --first send after genesis block
+    if self.hash == Util.hex_to_bytes("A170D51B94E00371ACE76E35AC81DC9405D5D04D4CEBC399AEACE07AE05DD293") then
+      return true
+    else
+      return nil, "genesis first send block is invalid"
+    end
+  end
+  
+  local btype = self.type
+  local prev_block_field = btype == "open" and "source" or "previous"
+  local prev_hash = self[prev_block_field]
+  local prev = Block.find(prev_hash)
+  if not prev then
+    return nil, ("%s block %s not found"):format(prev_block_field, Util.bytes_to_hex(prev_hash))
+  elseif not prev:verify_consistency() then
+    return nil, ("%s block %s verification failed"):format(prev_block_field, Util.bytes_to_hex(prev_hash))
+  end
+  
+  if btype == "send" then --verify that send didn't add balance (0-sends are OK for the moment)
+    local prev_balance = prev:get_balance()
+    if self.balance > prev_balance then
+      return nil, "send block wrongly credited balance to own account"
+    elseif self.balance < 0 then --should be impossible, balance is unsigned
+      return nil, "balance cannot be < 0"
+    end
+  end
+  if self.source then --`receive` or `open` block
+    --was the send directed to this account?
+    local send_block = Block.find(self.source)
+    if not send_block then
+      return nil, ("send block %s for '%s' not found"):format(Util.bytes_to_hex(self.source), btype)
+    end
+    if self:get_account_id() ~= send_block.destination then
+      return nil, ("send block %s's destination does't match"):format(Util.bytes_to_hex(self.source))
+    end
+  end
+  if btype == "open" then
+    if self.account == Account.burn.id then
+      return nil, "someone did the impossible -- find a pruvkey for the burn account"
+    end
+  end
+  
+  return true
+end
 
 return setmetatable(Block, NilDB.block)

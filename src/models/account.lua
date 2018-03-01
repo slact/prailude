@@ -68,6 +68,7 @@ function Account.bulk_pull(frontier, peer, opt)
     account = acct.id,
     frontier = acct.frontier
   })
+
   local blocks_so_far_count = 0
   
   local watchdog = opt.watchdog
@@ -169,7 +170,7 @@ function Account.bulk_pull(frontier, peer, opt)
       end
       if done then
         break
-      elseif fresh_blocks and leftovers_or_err  and #leftovers_or_err > 0 then
+      elseif fresh_blocks and leftovers_or_err and #leftovers_or_err > 0 then
         tcp.buf:push(leftovers_or_err)
       end
     end
@@ -181,6 +182,7 @@ function Account.bulk_pull(frontier, peer, opt)
   end, watchdog_wrapper)
 end
 
+Account.burn = Account.new {id=util.hex_to_bytes("0000000000000000000000000000000000000000000000000000000000000000")}
 
 ------------
 -- database stuff is in db/[db_type]/frontierdb.lua
