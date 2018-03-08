@@ -31,13 +31,19 @@ do
     end,
     consume = function(self)
       self.__consume(self.batch)
-      rawset(self, "batch", {})
+      self:clear()
       return self
+    end,
+    clear = function(self)
+      rawset(self, "batch", {})
     end,
     batch_size = 10000
   }}
   
-  function util.BatchSink(opt)
+  function util.BatchSink(opt, fn)
+    if type(fn)=="function" and type(opt)=="number" then
+      opt={consume=fn, batch_size=opt}
+    end
     return setmetatable({
       __consume = opt.consume,
       batch_size  = opt.batch_size,
@@ -50,14 +56,17 @@ do
   local batchsource_mt = {__index = {
     next = function(self)
       local batch = self.batch
-      local n = rawget(self, "__n")
-      n = n+1
-      if n > #batch then
-        batch = self.__produce() or {}
+      local n = rawget(self, "__batch_n")
+      if n >= #batch then
+        local total_n = rawget(self, "__total_n") + n
+        batch = self.__produce(total_n) or {}
+        rawset(self, "__total_n", total_n)
         n = 1
         self.batch = batch
+      else
+        n = n+1
       end
-      rawset(self, "__n", n)
+      rawset(self, "__batch_n", n)
       return rawget(batch, n)
     end,
     
@@ -69,9 +78,13 @@ do
   }}
   
   function util.BatchSource(opt)
+    if type(opt) == "function" then
+      opt = {produce = opt}
+    end
     return setmetatable( {
       __produce = opt.produce,
-      __n = 0,
+      __batch_n = 0,
+      __total_n = 0,
       batch = {},
     }, batchsource_mt)
   end
