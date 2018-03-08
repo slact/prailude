@@ -122,4 +122,7 @@ mt.__index.tonumber = mt.__tonumber
 Balance.genesis = Balance.new("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
 Balance.genesis:lock()
 
+Balance.zero = Balance.new(0)
+Balance.zero:lock()
+
 return Balance
