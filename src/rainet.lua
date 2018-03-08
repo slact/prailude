@@ -81,7 +81,7 @@ end
 
 local function handle_blocks()
   local function check_block(block, peer)
-    local ok, err = block:verify()
+    local ok, err = block:verify_PoW()
     if not ok then
       log:debug("server: got block that failed verification (%s) from %s", err, tostring(peer))
     else
