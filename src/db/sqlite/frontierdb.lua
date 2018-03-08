@@ -69,12 +69,12 @@ local FrontierDB_meta = {__index = {
   end,
   
   delete_synced_frontiers = function()
-    assert(db:exec("DELETE from bootstrap.frontier WHERE frontier == stored_frontier") == sqlite3.OK, db:errmsg())
+    assert(db:exec("DELETE from disktmp.frontier WHERE frontier == stored_frontier") == sqlite3.OK, db:errmsg())
     return db:changes()
   end,
   
   clear_bootstrap = function()
-    assert(db:exec("DELETE FROM bootstrap.frontier") == sqlite3.OK, db:errmsg())
+    assert(db:exec("DELETE FROM disktmp.frontier") == sqlite3.OK, db:errmsg())
   end
 }}
 
@@ -83,15 +83,15 @@ return {
     Frontier = require "prailude.frontier"
     db = db_ref
     --assert(db:exec(schema("TABLE", "frontier")) == sqlite3.OK, db:errmsg())
-    assert(db:exec(schema("TABLE", "bootstrap.frontier")) == sqlite3.OK, db:errmsg())
+    assert(db:exec(schema("TABLE", "disktmp.frontier")) == sqlite3.OK, db:errmsg())
     
-    sql.frontier_store = assert(db:prepare("INSERT OR IGNORE INTO bootstrap.frontier " ..
+    sql.frontier_store = assert(db:prepare("INSERT OR IGNORE INTO disktmp.frontier " ..
       "      (account, frontier, stored_frontier, pull_id) " ..
       "VALUES(      ?,        ?,               ?,       ?);"), db:errmsg())
     
-    sql.frontier_size = assert(db:prepare("SELECT count(*) FROM bootstrap.frontier"), db:errmsg())
+    sql.frontier_size = assert(db:prepare("SELECT count(*) FROM disktmp.frontier"), db:errmsg())
     
-    sql.frontier_get_range = assert(db:prepare("SELECT * FROM bootstrap.frontier ORDER BY account LIMIT ? OFFSET ?"), db:errmsg())
+    sql.frontier_get_range = assert(db:prepare("SELECT * FROM disktmp.frontier ORDER BY account LIMIT ? OFFSET ?"), db:errmsg())
     
     setmetatable(Frontier, FrontierDB_meta)
   end,
