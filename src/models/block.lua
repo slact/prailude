@@ -1,10 +1,11 @@
 --eh...
 
+local mainnet = true
+
 local Util = require "prailude.util"
 local Balance = require "prailude.util.balance"
-local verify_block_PoW = Util.work.verify
+local verify_block_PoW = mainnet and Util.work.verify or Util.work.verify_test
 local generate_block_PoW = Util.work.generate
-local verify_block_PoW_test = Util.work.verify_test
 local blake2b_hash = Util.blake2b.hash
 local verify_edDSA_blake2b_signature = Util.ed25519.verify
 local tinsert = table.insert
@@ -24,6 +25,8 @@ local block_typecode = {
   open =          4,
   change =        5
 }
+
+local GENESIS_HASH
 
 local Block_instance = {
   rehash = function(self)
@@ -50,15 +53,18 @@ local Block_instance = {
     return packed
   end,
   
-  verify = function(self)
-    if not self:verify_PoW() then
-      return nil, "insufficient proof of work"
-    --elseif not self:verify_signature() then
-    --  return nil, "bad signature"
-    --elseif not self:verify_consistency() then
-    --  return nil, "block inconsistent with ledger"
+  is_valid = function(self, lvl)
+    local valid = self.valid
+    if lvl == "PoW" then
+      return valid == "PoW" or valid == "signature" or valid == "ledger" or valid == "confirmed"
+    elseif lvl == "signature" then
+      return valid == "signature" or valid == "ledger" or valid == "confirmed"
+    elseif lvl == "ledger" then
+      return valid == "ledger" or valid == "confirmed"
+    elseif lvl == "confirmed" then
+      return valid == "confirmed"
     else
-      return true
+      error("validation level invalid:" .. tostring(lvl))
     end
   end,
   
@@ -71,8 +77,7 @@ local Block_instance = {
     end
   end,
   verify_PoW = function(self)
-    local valid = self.valid
-    if valid == "PoW" or valid == "signature" or valid == "ledger" or valid == "confirmed" then
+    if self:is_valid("PoW") then
       --already checked
       return true
     else
@@ -83,17 +88,13 @@ local Block_instance = {
       return ok, err
     end
   end,
-  verify_test_PoW = function(self)
-    return verify_block_PoW_test(self:PoW_hashable(), self.work)
-  end,
   generate_PoW = function(self)
     local pow = generate_block_PoW(self:PoW_hashable())
     self.work = pow
     return pow
   end,
   verify_signature = function(self, account_raw)
-    local valid = self.valid
-    if valid == "signature" or valid == "ledger" or valid == "confirmed" then
+    if self:is_valid("signature") then
       --alredy checked
       return true
     else
@@ -104,7 +105,63 @@ local Block_instance = {
       return ok, err
     end
   end,
-  --verify_consistency --defined further down
+  
+  verify_ledger = function(self)
+    print("VERIFY_LEDGER block: ", self, "hash:", Util.bytes_to_hex(self.hash), " type:", self.type, " valid:", self.valid)
+    local valid = self.valid
+    if valid == "ledger" or valid == "confirmed" then
+      print("already validated")
+      return true
+    elseif self.hash == GENESIS_HASH then
+      print("genesis block")
+      self.valid = "confirmed" --for sure
+      return true
+    end
+    
+    local btype = self.type
+    local prev_block_field = btype == "open" and "source" or "previous"
+    print("prev_block_field:" , prev_block_field)
+    local prev_hash = self[prev_block_field]
+    local prev = Block.find(prev_hash)
+    
+    print("prev:", Util.bytes_to_hex(prev_hash), " valid:", prev.valid)
+    
+    if not prev then
+      return nil, ("%s block %s not found"):format(prev_block_field, Util.bytes_to_hex(prev_hash))
+    elseif not prev:verify_ledger() then
+      return nil, ("%s block %s verification failed"):format(prev_block_field, Util.bytes_to_hex(prev_hash))
+    end
+    
+    if btype == "send" then --verify that send didn't add balance (0-sends are OK for the moment)
+      local prev_balance = prev:get_balance()
+      if self.balance > prev_balance then
+        return nil, "send block wrongly credited balance to own account"
+      elseif self.balance < Balance.zero then --should be impossible, balance is unsigned
+        return nil, "balance cannot be < 0"
+      end
+    end
+    if self.source then --`receive` or `open` block
+      --was the send directed to this account?
+      local send_block = Block.find(self.source)
+      if not send_block then
+        return nil, ("send block %s for '%s' not found"):format(Util.bytes_to_hex(self.source), btype)
+      end
+      if self.account ~= send_block.destination then
+        return nil, ("send block %s's destination does't match"):format(Util.bytes_to_hex(self.source))
+      end
+    end
+    if btype == "open" then
+      if self.account == Account.burn.id then
+        return nil, "someone did the impossible -- find a privkey for the burn account"
+      end
+      --block source has already been verified with the above check
+    end
+    
+    self.valid = "ledger"
+    return true
+  end,
+  
+  --verify_ledger --defined further down
   typecode = function(self)
     return block_typecode[self.type]
   end,
@@ -133,18 +190,62 @@ local Block_instance = {
   end,
   
   store = function(self, opt)
+    assert(self.account, "gotta have an account")
     return Block.store(self, opt)
+  end,
+  
+  get_account = function(self)
+    return Account.find(assert(self.account, "gotta have an account"))
+  end,
+  
+  get_send_amount = function(self)
+    assert(self.type == "send")
+    local own_balance, prev_balance = self:get_balance(), Block.find(self.previous):get_balance()
+    print(debug.traceback())
+    print("GET_SEND_AMOUNT", prev_balance - own_balance)
+    return prev_balance - own_balance
+  end,
+  
+  get_balance = function(self)
+    if self.hash == GENESIS_HASH then
+      return Balance.genesis
+    elseif self.balance then
+      return self.balance
+    elseif self.type == "open" then
+      if self.balance then
+        return self.balance
+      else
+        local source = assert(Block.find(self.source), "source block not found")
+        local sent_balance = source:get_send_amount()
+        self.balance = self.balance
+        return sent_balance
+      end
+    elseif self.type == "receive" then
+      local balance, parent, source
+      repeat
+        parent = Block.find(self.previous)
+        source = Block.find(self.source)
+        assert(parent, "parent for receive block missing when trying to get balance")
+        assert(source, "source for receive block missing when trying to get balance")
+        balance = parent:get_balance() + source:get_send_amount()
+        if parent.balance then
+          return balance
+        end
+      until parent == nil
+      if balance then
+        return balance
+      else
+        return nil, "missing parent"
+      end
+    end
+  end,
+  
+  get_child_hashes = function(self)
+    return Block.get_child_hashes(self)
   end
   
 }
-local block_meta = {__index = function(self, k)
-  local fn = rawget(Block_instance, k)
-  if fn then
-    return fn
-  elseif k == "hash" then
-    return Block_instance.rehash(self)
-  end
-end}
+local Block_meta = { __index = Block_instance }
 
 function Block.new(block_type, data)
   if data then
@@ -180,8 +281,15 @@ function Block.new(block_type, data)
   elseif valid == 4 then
     data.valid = "confirmed"
   end
-  
-  return setmetatable(data, block_meta)
+  local block = setmetatable(data, Block_meta)
+  if not data.defer_hash and not data.hash then
+    block:rehash()
+  end
+  return block
+end
+
+function Block.is_instance(obj)
+  return type(obj) == "table" and getmetatable(obj) == Block_meta
 end
 
 function Block.get(data)
@@ -268,7 +376,7 @@ function Block.batch_verify_signatures(blocks, account_pubkey)
   local valid
   for i, block in ipairs(blocks) do
     valid = block.valid
-    if not valid or (valid ~= "PoW" and valid ~= "signature" and valid ~= "ledger" and valid ~= "confirmed") then
+    if not valid or (valid ~= "signature" and valid ~= "ledger" and valid ~= "confirmed") then
       tinsert(batch, {block.hash, block.signature, account_pubkey, i=i, block=block})
     end
   end
@@ -276,11 +384,12 @@ function Block.batch_verify_signatures(blocks, account_pubkey)
   if all_valid then
     if #batch == #blocks then --a little optimization
       for _, block in ipairs(blocks) do
-        block.valid = "PoW"
+        block.valid = "signature"
       end
     else
+      
       for _, b in ipairs(batch) do
-        blocks[b.i].valid = "PoW"
+        blocks[b.i].valid = "signature"
       end
     end
     return true
@@ -322,97 +431,10 @@ else
   })
   assert(Block.genesis:pack())
 end
-assert(Block.genesis:verify())
+GENESIS_HASH = Block.genesis.hash
 
-function Block_instance.get_send_amount(self)
-  assert(self.type == "send")
-  return self:get_balance() - Block.find(self.previous):get_balance()
-end
-
-local genesis_hash = Block.genesis.hash
-function Block_instance.get_balance(self)
-  if self.hash == genesis_hash then
-    return Balance.genesis
-  elseif self.balance then
-    return self.balance
-  elseif self.type == "open" then
-    return self.balance or self:sent_balance(self.source)
-  elseif self.type == "receive" then
-    local balance, parent, source
-    repeat
-      parent = self:find_parent()
-      source = Block.find(self.source)
-      assert(parent, "parent for receive block missing when trying to get balance")
-      assert(source, "source for receive block missing when trying to get balance")
-      balance = parent:get_balance() + source:get_send_amount()
-      if parent.balance then
-        return balance
-      end
-    until parent == nil
-    if balance then
-      return balance
-    else
-      return nil, "missing parent"
-    end
-  end
-end
-
-function Block_instance.get_account_id(self)
-  return assert(self.account)
-end
-
-function Block_instance.verify_consistency(self)
-  local valid = self.valid
-  if valid == "ledger" or valid == "confirmed" then
-    --already validated
-    return true
-  elseif self.hash == genesis_hash then
-    --genesis block
-    return true
-  elseif self.previous == genesis_hash then
-    --first send after genesis block
-    if self.hash == Util.hex_to_bytes("A170D51B94E00371ACE76E35AC81DC9405D5D04D4CEBC399AEACE07AE05DD293") then
-      return true
-    else
-      return nil, "genesis first send block is invalid"
-    end
-  end
-  
-  local btype = self.type
-  local prev_block_field = btype == "open" and "source" or "previous"
-  local prev_hash = self[prev_block_field]
-  local prev = Block.find(prev_hash)
-  if not prev then
-    return nil, ("%s block %s not found"):format(prev_block_field, Util.bytes_to_hex(prev_hash))
-  elseif not prev:verify_consistency() then
-    return nil, ("%s block %s verification failed"):format(prev_block_field, Util.bytes_to_hex(prev_hash))
-  end
-  
-  if btype == "send" then --verify that send didn't add balance (0-sends are OK for the moment)
-    local prev_balance = prev:get_balance()
-    if self.balance > prev_balance then
-      return nil, "send block wrongly credited balance to own account"
-    elseif self.balance < 0 then --should be impossible, balance is unsigned
-      return nil, "balance cannot be < 0"
-    end
-  end
-  if self.source then --`receive` or `open` block
-    --was the send directed to this account?
-    local send_block = Block.find(self.source)
-    if not send_block then
-      return nil, ("send block %s for '%s' not found"):format(Util.bytes_to_hex(self.source), btype)
-    end
-    if self:get_account_id() ~= send_block.destination then
-      return nil, ("send block %s's destination does't match"):format(Util.bytes_to_hex(self.source))
-    end
-  end
-  if btype == "open" then
-    if self.account == Account.burn.id then
-      return nil, "someone did the impossible -- find a pruvkey for the burn account"
-    end
-  end
-  
-  return true
-end
+assert(Block.genesis:verify_PoW())
+assert(Block.genesis:verify_signature())
+assert(Block.genesis:verify_ledger())
 
 return setmetatable(Block, NilDB.block)
