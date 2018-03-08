@@ -40,6 +40,21 @@ function DB.db(name)
   return assert(dbs[name])
 end
 
+function DB.transaction(db, fn)
+  if not fn and type(db)=="function" then
+    db, fn = default_db, db
+  end
+  
+  assert(db:exec("BEGIN EXCLUSIVE TRANSACTION") == sqlite3.OK, db:errmsg())
+  fn()
+  local ok = db:exec("COMMIT TRANSACTION") == sqlite3.OK
+  if ok then
+    return db:total_changes()
+  else
+    return nil, db:errmsg()
+  end
+end
+
 function DB.initialize()
   --opt = opt or {}
   local db = DB.open("raiblocks", {
