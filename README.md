@@ -33,7 +33,7 @@ There's still a lot of work to do, but much has also been completed. **BONUS** l
         Frontiers get loaded from the faster peers in parallel, and peers failing to respond with useful data are de-prioritized.
       * Fork resultion - **TODO**  
         Forks encountered during bootstrapping need to be resolved before proceeding. There are several heuristics available to do this, as well as using `confirm_req`s to resolve specific blocks when the heuristics fail. This is one of the most complex parts of the Nano protocol.
-      * Block verification - **20%**  
+      * Block verification - **60%**  
         Once loaded, blocks must be verified and stored in the database. Any issues here must be resolved  before considering the node as synced.
       * Process pending-blocks backlog - **TODO**  
         While we were bootstrapping, a whole bunch of blocks make their wait to us on the network.
@@ -50,7 +50,7 @@ There's still a lot of work to do, but much has also been completed. **BONUS** l
   * Wallet
     * Seeding - **TODO**  
       Accounts must be generated from a seed, which can be backed up and restored. The backup should be compatible with the core node's format.
-    * Balance tracking - **20%**  
+    * Balance tracking - **40%**  
       Balances must be kept up-to-date and xrb/raw units must be respected.
     * **BONUS** Account groups  
       several accounts can be grouped together to form a single usable entity tracking its balance and using the sub-accounts as needed for transactions
