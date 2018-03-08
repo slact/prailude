@@ -6,19 +6,20 @@ local function schema(tbl_type, tbl_name)
   if not tbl then tbl = tbl_name end
   return [[
   CREATE ]]..tbl_type..[[ IF NOT EXISTS ]]..tbl_name..[[ (
-    id                    TEXT,
-    frontier              TEXT,
+    id                    BLOB,
+    frontier              BLOB,
     num_blocks            INTEGER,
-    representative_acct   TEXT,
+    representative_acct   BLOB,
     
-    balance_raw           TEXT,
+    balance_raw           BLOB,
     balance               REAL,
     
     delegated_balance     REAL, --inexactness is ok here
     
     valid                 INTEGER NOT NULL DEFAULT 0,
     
-    genesis_distance      INTEGER, -- number of accounts to reach to genesis
+    genesis_distance      INTEGER, -- number of accounts to reach genesis account
+    genesis_block_distance INTEGER, -- number of blocks to reach genesis
     source_peer           TEXT,
     PRIMARY KEY(id)
   ) WITHOUT ROWID;
@@ -28,6 +29,7 @@ local function schema(tbl_type, tbl_name)
   CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_rep_idx        ON ]]..tbl..[[ (representative_acct);
   CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_balance_idx    ON ]]..tbl..[[ (balance);
   CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_frontier_idx   ON ]]..tbl..[[ (frontier);
+  CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_genesis_distance_idx ON ]]..tbl..[[ (genesis_distance);
   ]]
 end
 
@@ -83,10 +85,12 @@ local AccountDB_meta = {__index = {
     
     stmt:bind(8, self.valid)
     
+    stmt:bind(9, self.genesis_distance);
+    stmt:bind(10, self.genesis_nlock_distance);
     if self.source_peer then
-      stmt:bind(9, tostring(self.source_peer))
+      stmt:bind(11, tostring(self.source_peer))
     else
-      stmt:bind(9, nil)
+      stmt:bind(11, nil)
     end
     
     stmt:step()
@@ -100,10 +104,10 @@ local AccountDB_meta = {__index = {
     return self
   end,
   
-  update = function(self, what, opt)
+  update = function(self, what)
     
     if what == "balance" or what == "balance_raw" then
-      local stmt = opt == "bootstrap" and sql.bootstrap_account_update_balance or sql.account_update_balance
+      local stmt = sql.account_update_balance
       stmt:bind(1, tonumber(tostring(self.balance)))
       stmt:bind(2, self.balance:pack())
       stmt:bind(3, self.id)
@@ -111,7 +115,7 @@ local AccountDB_meta = {__index = {
       stmt:reset()
     else
       
-      local stmt = assert((opt=="bootstrap" and bootstrap_account_update or account_update)[what], what .. " is not a valid account field")
+      local stmt = assert(account_update[what], what .. " is not a valid account field")
       stmt:bind(1, self[what])
       stmt:bind(2, self.id)
       stmt:step()
@@ -121,11 +125,19 @@ local AccountDB_meta = {__index = {
   end,
   
   get_frontier_and_genesis_distance = function(account_id)
-    local stmt = sql.account_get_frontier
+    local stmt = sql.account_get_frontier_and_genesis_distance
     stmt:bind(1, account_id)
     local frontier, distance = stmt:urows()(stmt)
     stmt:reset()
     return frontier, distance
+  end,
+  
+  get_range_sorted_by_genesis_distance = function(limit, offset)
+    local accts = {}
+    for data in db:nrows(("SELECT * FROM accounts ORDER BY genesis_distance ASC LIMIT %i offset %i"):format(limit, offset or 0)) do
+      table.insert(accts. Account.new(data))
+    end
+    return accts
   end
 }}
 
@@ -134,22 +146,16 @@ return {
     Account = require "prailude.account"
     db = db_ref
     assert(db:exec(schema("TABLE", "accounts")) == sqlite3.OK, db:errmsg())
-    assert(db:exec(schema("TEMPORARY TABLE", "bootstrap_accounts")) == sqlite3.OK, db:errmsg())
     
     sql.account_get = assert(db:prepare("SELECT * FROM accounts WHERE id = ?"), db:errmsg())
-    sql.bootstrap_account_get = assert(db:prepare("SELECT * FROM bootstrap_accounts WHERE id = ?"), db:errmsg())
     
     sql.account_get_frontier_and_genesis_distance = assert(db:prepare("SELECT frontier, genesis_distance FROM accounts WHERE id = ?"), db:errmsg())
     
     sql.account_set = assert(db:prepare("INSERT OR REPLACE INTO accounts " ..
-      "      (id, frontier, num_blocks, representative_acct, balance_raw, balance, delegated_balance, valid, source_peer) " ..
-      "VALUES(?,         ?,          ?,                   ?,           ?,       ?,                 ?,     ?,           ?)"), db:errmsg())
-    sql.bootstrap_account_set = assert(db:prepare("INSERT OR REPLACE INTO bootstrap_accounts " ..
-      "      (id, frontier, num_blocks, representative_acct, balance_raw, balance, delegated_balance, valid, source_peer) " ..
-      "VALUES(?,         ?,          ?,                   ?,           ?,       ?,                 ?,     ?,           ?)"), db:errmsg())
+      "      (id, frontier, num_blocks, representative_acct, balance_raw, balance, delegated_balance, valid, genesis_distance, genesis_block_distance, source_peer) " ..
+      "VALUES(?,         ?,          ?,                   ?,           ?,       ?,                 ?,     ?,                ?,                      ?,           ?)"), db:errmsg())
     
     sql.account_update_balance = assert(db:prepare("UPDATE accounts SET balance = ?, balance_raw = ? WHERE id = ?"), db:errmsg())
-    sql.bootstrap_account_update_balance = assert(db:prepare("UPDATE bootstrap_accounts SET balance = ?, balance_raw = ? WHERE id = ?"), db:errmsg())
     
     for _, n in ipairs {"frontier", "representative_acct", "delegated_balance", "num_blocks", "valid", "source_peer"} do
       account_update[n]=assert(db:prepare("UPDATE accounts SET " .. n .. " = ? WHERE id = ?"), n .. ":  " .. db:errmsg())
