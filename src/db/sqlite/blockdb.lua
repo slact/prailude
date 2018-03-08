@@ -165,7 +165,7 @@ return {
     db = db_ref
     
     assert(db:exec(schema("TABLE", "blocks")) == sqlite3.OK, db:errmsg())
-    assert(db:exec(schema("TABLE", "bootstrap.blocks", true)) == sqlite3.OK, db:errmsg())
+    assert(db:exec(schema("TABLE", "disktmp.blocks", true)) == sqlite3.OK, db:errmsg())
     
     sql.block_get = assert(db:prepare("SELECT * FROM blocks WHERE hash = ?"), db:errmsg())
     sql.bootstrap_block_get = assert(db:prepare("SELECT * FROM bootstrap.blocks WHERE hash = ?"), db:errmsg())

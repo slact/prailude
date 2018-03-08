@@ -4,11 +4,13 @@ local Bus = require "prailude.bus"
 local subdbs = {
   require "prailude.db.sqlite.peer",
   require "prailude.db.sqlite.block",
+  require "prailude.db.sqlite.blockwalker",
   require "prailude.db.sqlite.frontier",
   require "prailude.db.sqlite.account",
   require "prailude.db.sqlite.kv",
 }
 
+local default_db
 local dbs = {}
 local DB = {}
 
@@ -67,12 +69,13 @@ function DB.initialize()
       cache_size = "1000000"
     }
   })
+  default_db = db
   assert(db:exec("ATTACH DATABASE ':memory:' as mem") == sqlite3.OK, db:errmsg())
-  assert(db:exec("ATTACH DATABASE 'bootstrap.db' as bootstrap") == sqlite3.OK, db:errmsg())
+  assert(db:exec("ATTACH DATABASE 'tmp.db' as disktmp") == sqlite3.OK, db:errmsg())
   DB.pragma(db, {
-    ["bootstrap.synchronous"] = false, --don't really care if the db lags behind on crash
-    ["bootstrap.journal_mode"] = false,
-    ["bootstrap.foreign_keys"] = false,
+    ["disktmp.synchronous"] = false, --don't really care if the db lags behind on crash
+    ["disktmp.journal_mode"] = false,
+    ["disktmp.foreign_keys"] = false,
   })
   
   for _, subdb in ipairs(subdbs) do
