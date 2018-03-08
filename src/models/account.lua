@@ -158,6 +158,10 @@ function Account.bulk_pull(frontier, peer, opt)
               log:warn("Found bad block from peer %s: %s (%s)", tostring(peer),  Block.new(blockdata):to_json(), err)
               return nil, "bad block: " .. err
             end
+            -- add the account to the block... it's quite useful this way
+            if not block.account then
+              block.account = acct.id
+            end
           end
           
           blocks_so_far_count = blocks_so_far_count + #fresh_blocks
