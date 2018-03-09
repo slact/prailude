@@ -106,29 +106,29 @@ local Block_instance = {
     end
   end,
   
-  verify_ledger = function(self)
-    print("VERIFY_LEDGER block: ", self, "hash:", Util.bytes_to_hex(self.hash), " type:", self.type, " valid:", self.valid)
+  verify_ledger = function(self, n)
+    print("VERIFY_LEDGER n: " .. (n or 0) .. " " .. Account.to_readable(self.account) .. " hash:", Util.bytes_to_hex(self.hash), " type:", self.type, " valid:", self.valid)
     local valid = self.valid
     if valid == "ledger" or valid == "confirmed" then
-      print("already validated")
+      --print("already validated")
       return true
     elseif self.hash == GENESIS_HASH then
-      print("genesis block")
+      --print("genesis block")
       self.valid = "confirmed" --for sure
       return true
     end
     
     local btype = self.type
     local prev_block_field = btype == "open" and "source" or "previous"
-    print("prev_block_field:" , prev_block_field)
+    --print("prev_block_field:" , prev_block_field)
     local prev_hash = self[prev_block_field]
     local prev = Block.find(prev_hash)
     
-    print("prev:", Util.bytes_to_hex(prev_hash), " valid:", prev.valid)
+    --print("prev:", Util.bytes_to_hex(prev_hash), " valid:", prev.valid)
     
     if not prev then
       return nil, ("%s block %s not found"):format(prev_block_field, Util.bytes_to_hex(prev_hash))
-    elseif not prev:verify_ledger() then
+    elseif not assert(prev:verify_ledger((n or 0) + 1)) then
       return nil, ("%s block %s verification failed"):format(prev_block_field, Util.bytes_to_hex(prev_hash))
     end
     
@@ -201,13 +201,14 @@ local Block_instance = {
   get_send_amount = function(self)
     assert(self.type == "send")
     local own_balance, prev_balance = self:get_balance(), Block.find(self.previous):get_balance()
-    print(debug.traceback())
-    print("GET_SEND_AMOUNT", prev_balance - own_balance)
+    --print(debug.traceback())
+    --print("GET_SEND_AMOUNT", prev_balance > own_balance, Util.bytes_to_hex(self.hash), Account.to_readable(self.account), prev_balance, own_balance)
     return prev_balance - own_balance
   end,
   
   get_balance = function(self)
     if self.hash == GENESIS_HASH then
+      --print("GEMESIS BALANCE ", tostring(Balance.genesis))
       return Balance.genesis
     elseif self.balance then
       return self.balance

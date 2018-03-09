@@ -1,7 +1,7 @@
 local Block
 local sqlite3 = require "lsqlite3"
 local mm = require "mm"
-local Util = require "prailude.util"
+--local Util = require "prailude.util"
 
 local schema = function(tbl_type, tbl_name, skip_indices)
   local _, tbl = tbl_name:match("^(.+%.)(.+)")
@@ -73,7 +73,7 @@ local BlockDB_meta = {__index = {
       block = rawget(cache, hash)
     end
     if block == nil then
-      print("CACHE: block "  .. Util.bytes_to_hex(hash) .. " not in cache")
+      --print("CACHE: block "  .. Util.bytes_to_hex(hash) .. " not in cache")
       stmt:bind(1, hash)
       block = stmt:nrows()(stmt)
       --TODO: check for sqlite3.BUSY and such responses
@@ -86,10 +86,10 @@ local BlockDB_meta = {__index = {
       end
       return block
     elseif block == false then
-      print("CACHE: block "  .. Util.bytes_to_hex(hash) .. " does not exist (in cache)")
+      --print("CACHE: block "  .. Util.bytes_to_hex(hash) .. " does not exist (in cache)")
       return nil
     else
-      print("CACHE: block "  .. Util.bytes_to_hex(hash) .. " found")
+      --print("CACHE: block "  .. Util.bytes_to_hex(hash) .. " found")
       return block
     end
   end,
@@ -102,7 +102,7 @@ local BlockDB_meta = {__index = {
       if cache_enabled then
         local cached_block = rawget(cache, block.hash)
         if cached_block then
-          print("CACHE: block "  .. Util.bytes_to_hex(block.hash) .. " found")
+          --print("CACHE: block "  .. Util.bytes_to_hex(block.hash) .. " found")
           block = cached_block
         end
       end
