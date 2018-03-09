@@ -8,6 +8,7 @@ local Frontier = require "prailude.frontier"
 local Account = require "prailude.account"
 local Message = require "prailude.message"
 local Block = require "prailude.block"
+local BlockWalker = require "prailude.blockwalker"
 local Vote = require "prailude.vote"
 local Util = require "prailude.util"
 
@@ -141,19 +142,75 @@ function Rainet.bootstrap()
     end
     
     do
-      log:debug("bootstrap: fetching frontiers...")
+      log:debug("bootstrap: fetching frontiers... this should take a few minutes...")
       --Rainet.fetch_frontiers(3)
       log:debug("bootstap: finding already synced frontiers...")
       local already_synced = Frontier.delete_synced_frontiers()
       log:debug("bootstrap: need to sync %i frontiers (%i already synced)", Frontier.get_size(), already_synced)
     end
     
-    log:debug("bootstrap: gathering blocks... this will take a while...")
+    log:debug("bootstrap: gathering blocks... this should take 20-50 minutes...")
     --Rainet.bulk_pull_accounts()
     
-    --now start building from genesis
-    local genesis = Block.find(Block.genesis.hash, "bootstrap")
+    log:debug("bootstrap: importing %i blocks... this should take a few minutes...", Block.count_bootstrapped())
+    --Block.import_unverified_bootstrap_blocks()
     
+    --now start building from accounts closest to genesis
+    --local accts_needing_sync = Util.BatchSource(function(n)
+    --  return Account.get_range_sorted_by_genesis_distance(1000, n)
+    --end)
+    
+    --local accounts_synced = 0
+    --for acct in accts_needing_sync:each() do
+    --  --do per-account stuff
+    --  accounts_synced = accounts_synced + 1
+    --end
+    --[[
+    local sink = Util.BatchSink(5000, function(batch)
+      local acct = {}
+      for  _, block in ipairs(batch) do
+        if not acct[block.account] then
+          acct[block.account]=block:get_account()
+        end
+      end
+      
+      --begin transaction
+      
+      --end transaction
+    end)
+    
+    
+    local unverified_blocks = {}
+    local block_source
+    
+    local genesis = Block.find(Block.genesis.hash)
+    genesis:verify_ledger()
+    table.insert(unverified_blocks,
+    
+    ]]
+    local foo = true
+    if foo then
+      local sink = Util.BatchSink(5000, Block.batch_update_ledger_validation)
+      local genesis = Block.find(Block.genesis.hash)
+      
+      local walker = BlockWalker.new {
+        visit = function(block)
+          print("verifying block", Util.bytes_to_hex(block.hash))
+          assert(block:verify_ledger())
+          sink:add(block)
+          return true
+        end,
+        start = genesis,
+        direction = "frontier",
+      }
+      
+      local n = 0
+      --print(mm(walker))
+      while walker:next() do
+        n = n + 1
+      end
+      print("walked " .. n .. "blocks")
+    end
     
     local t3 = os.time()
     log:debug("Bootstrap took %imin %isec", math.floor((t3-t0)/60), (t3-t0)%60)
@@ -171,25 +228,19 @@ function Rainet.bulk_pull_accounts()
   local account_frontier_score_delta = 1/frontier_size
   
   local retry={}
-  local source; do
-    local limit, offset = 50000, 0
-    source = Util.BatchSource {
-      produce = function()
-        local batch = Frontier.get_range(limit, offset)
-        offset = offset + limit
-        if #batch > 0 then
-          return batch
-        else
-          --retry the stuff that timed out
-          for v, _ in pairs(retry) do
-            table.insert(batch, v)
-          end
-          retry = {}
-          return batch
-        end
+  local source = Util.BatchSource(function(n)
+    local batch = Frontier.get_range(50000, n)
+    if #batch > 0 then
+      return batch
+    else
+      --retry the stuff that timed out
+      for v, _ in pairs(retry) do
+        table.insert(batch, v)
       end
-    }
-  end
+      retry = {}
+      return batch
+    end
+  end)
   
   local sink = Util.BatchSink {
     batch_size = 10000,
@@ -197,7 +248,7 @@ function Rainet.bulk_pull_accounts()
       --log:debug("start DB save of %i items", #batch)
       local gettime = require "prailude.util.lowlevel".gettime
       local t0=gettime()
-      Block.batch_store(batch, "bootstrap")
+      Block.batch_store_bootstrap(batch)
       log:debug("DB save took %.3f sec", gettime()-t0)
     end
   }

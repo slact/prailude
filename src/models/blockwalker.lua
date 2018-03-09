@@ -1,5 +1,6 @@
 local Block = require "prailude.block"
 local Util =  require "prailude.util"
+local Account = require "prailude.account"
 
 local uniqueRunID; do
   -- since we're single-threaded and DB-exclusive, and walks are temporary data,
@@ -19,11 +20,10 @@ local BlockWalker_instance = {
   end,
   
   next = function(self)
-    print("NEXT!!!!!", require "mm"(self.unvisited))
-    
-    local next_block_id = self.unvisited:next()
-    if next_block_id then
-      return self.visit(next_block_id)
+    local next_block = self.unvisited:next()
+        print("BlockWalker NEXT!!!!!", Util.bytes_to_hex(next_block.hash))
+    if next_block then
+      return self.visit(next_block)
     end
   end,
   
@@ -58,24 +58,14 @@ function BlockWalker.new(data)
     error("invalid walk direction " .. tostring(data.direction))
   end
   
-  local start = data.start
-  if getmetatable(start) == nil then  --just a regular array of starting blocks
-    local n = 0
-    for _, obj in ipairs(start) do
-      n = n+1
-      assert(Block.is_instance(obj), "at least one start position is not a block")
-    end
-    assert(n>=1, "must have at least 1 starting block")
-  else  -- probably a single start block?
-    assert(Block.is_instance(data.start), "at least one start position is not a block")
-    data.start = { data.start }
-  end
+  local self = {
+    direction = data.direction,
+  }
   
-  local id = uniqueRunID()
-  data.id = id
+  self.id = uniqueRunID()
   
   local unvisited = Util.PageQueue{
-    id=id,
+    id=self.id,
     pagesize = 5000,
     store_item = function(item, state)
       local itemtype = type(item)
@@ -99,38 +89,54 @@ function BlockWalker.new(data)
     end,
     store_page = BlockWalker.store_page,
     load_page = BlockWalker.restore_page,
-    stored_page_size = BlockWalker.get_page_size
+    stored_page_size = BlockWalker.get_page_size,
+    item_tostring = function(item)
+      local block =  type(item) == "string" and Block.find(item) or item
+      return ("%s %s %s %s"):format(Util.bytes_to_hex(block.hash), Account.to_readable(block.account), block.type, block.valid)
+    end
   }
+  self.unvisited = unvisited
   
-  --for _, start_block in ipairs(data.start) do
---    unvisited:add(start_block)
---  end
-    
-  local visit = data.visit
-  data.visit = function(block)
-    assert(type(block)=="table")
-    
-    local kids = block:get_child_hashes()
-    
-    if block.type == "send" then
-      assert(#kids == 2)
-    else
-      assert(#kids == 1)
+  
+  do
+    local start = data.start
+    if getmetatable(start) == nil then  --just a regular array of starting blocks
+      local n = 0
+      for _, obj in ipairs(start) do
+        n = n+1
+        assert(Block.is_instance(obj), "at least one start position is not a block")
+        unvisited:add(obj)
+      end
+      assert(n>=1, "must have at least 1 starting block")
+    else  -- probably a single start block?
+      assert(Block.is_instance(start), "at least one start position is not a block")
+      unvisited:add(start)
     end
-    
-    for _, child_hash in ipairs(kids) do
-      unvisited:add(child_hash)
-    end
-    
-        
-    print("RARRRRRG", unvisited:count())
-    
-    return visit(block)
   end
   
-  data.unvisited = unvisited
+  do
+    local visit = data.visit
+    self.visit = function(block)
+      assert(type(block)=="table")
+      --print("VISITING ", Util.bytes_to_hex(block.hash))
+      local ret, err = assert(visit(block))
+      if ret then      
+        local child = block:get_next()
+        if child then 
+          unvisited:add(child)
+        end
+        if block.type == "send" then
+          local dst = block:get_destination()
+          if dst and dst.type == "open" then
+            unvisited:add(child_hash)
+          end
+        end
+      end
+      return ret, err
+    end
+  end
   
-  return setmetatable(data, BlockWalker_meta)
+  return setmetatable(self, BlockWalker_meta)
 end
 
 return BlockWalker

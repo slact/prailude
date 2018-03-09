@@ -218,26 +218,18 @@ local Block_instance = {
       else
         local source = assert(Block.find(self.source), "source block not found")
         local sent_balance = source:get_send_amount()
-        self.balance = self.balance
+        self.balance = sent_balance
         return sent_balance
       end
     elseif self.type == "receive" then
       local balance, parent, source
-      repeat
-        parent = Block.find(self.previous)
-        source = Block.find(self.source)
-        assert(parent, "parent for receive block missing when trying to get balance")
-        assert(source, "source for receive block missing when trying to get balance")
-        balance = parent:get_balance() + source:get_send_amount()
-        if parent.balance then
-          return balance
-        end
-      until parent == nil
-      if balance then
-        return balance
-      else
-        return nil, "missing parent"
-      end
+      parent = Block.find(self.previous)
+      source = Block.find(self.source)
+      assert(parent, "parent for receive block missing when trying to get balance")
+      assert(source, "source for receive block missing when trying to get balance")
+      balance = parent:get_balance() + source:get_send_amount()
+      self.balance = balance
+      return balance
     end
   end,
   
