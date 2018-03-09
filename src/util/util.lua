@@ -99,7 +99,6 @@ local PageQueue; do
   -- page_id
   
   local Page_meta = {__index = {
-    state = "idle",
     change_state = function(self, new_state)
       local state = self.state
       if state == new_state then
@@ -113,6 +112,7 @@ local PageQueue; do
       end
       
       if new_state == "idle" and state == "stored" then
+        self.state = new_state
         return self -- we're done here
       elseif new_state == "active" and (state == "idle" or state == "stored") then
         local store_item, data = self.store_item, self.data
@@ -139,6 +139,7 @@ local PageQueue; do
         self.data = nil
       end
       self.state = new_state
+      return self
     end,
     
     add = function(self, item)
