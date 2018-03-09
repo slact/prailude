@@ -179,6 +179,24 @@ local PageQueue; do
       return ret
     end,
     
+    debug_each = function(self, callback)
+      if self.state == "active" then
+        for i=self.first, self.last do
+          callback(self.data[i], "active")
+        end
+      elseif self.state == "idle" then
+        for _, item in ipairs(self.data) do
+          callback(item, "idle")
+        end
+      elseif self.state == "stored" then
+        self:change_state("idle")
+        self:debug_each(callback)
+        self:change_state("stored")
+      else
+        error("unexpected page state " .. tostring(self.state))
+      end
+    end,
+    
     count = function(self)
       if self.state == "active" then
         if self.data then
@@ -282,6 +300,21 @@ local PageQueue; do
         n = n + page:count()
       end
       return n
+    end,
+    
+    debug_each = function(self, callback)
+      for _, page in ipairs(self.pages) do
+        page:debug_each(callback)
+      end
+    end,
+    
+    debug_print = function(self)
+      local n, item_tostring = 0, self.data_handlers.item_tostring
+      local callback = function(item, status)
+        n = n + 1
+        print(("%4i: %s"):format(n, item_tostring(item, status)))
+      end
+      return self:debug_each(callback)
     end
     
   }}
@@ -294,7 +327,8 @@ local PageQueue; do
       data_handlers = {
         store_item = assert(opt.store_item, "store_item missing"),
         store_page = assert(opt.store_page, "store_page missing"),
-        load_page =  assert(opt.load_page,  "load_page missing")
+        load_page =  assert(opt.load_page,  "load_page missing"),
+        item_tostring = opt.item_tostring or tostring
       }
     }
     assert(pq.id, "PageQueue ID required")
