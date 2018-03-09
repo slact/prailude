@@ -84,6 +84,7 @@ static int lua_balance_unpack(lua_State *L) {
     luaL_error(L, "packed balance string must be 16 bytes long, but was %u", sz);
   }
   balance = balance_create(L);
+  clear128(&balance->raw.elements[0]);
   readu128BE((uint8_t *)packed, &balance->raw.elements[1]);
   balance->unit = balance_default_unit;
   return 1;
