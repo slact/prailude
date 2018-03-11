@@ -57,6 +57,16 @@ function DB.transaction(db, fn)
   end
 end
 
+function DB.first_row(query)
+  local f, t = default_db:nrows(query)
+  return f(t)
+end
+
+function DB.first_result(query)
+  local f, t = default_db:urows(query)
+  return f(t)
+end
+
 function DB.initialize()
   --opt = opt or {}
   local db = DB.open("raiblocks", {
