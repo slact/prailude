@@ -126,7 +126,7 @@ function Rainet.initialize()
 end
 
 function Rainet.bootstrap()
-  return coroutine.wrap(function()
+  local coro = coroutine.create(function()
     --let's gather some peers first. 50 active peers should be enough
     
     log:debug("bootstrap: preparing database...")
@@ -215,7 +215,8 @@ function Rainet.bootstrap()
     local t3 = os.time()
     log:debug("Bootstrap took %imin %isec", math.floor((t3-t0)/60), (t3-t0)%60)
     
-  end)()
+  end)
+  return coroutine.resume(coro)
 end
 
 function Rainet.bulk_pull_accounts()
