@@ -236,21 +236,25 @@ local Block_instance = {
   end,
   
   get_balance = function(self)
+    local blocktype = self.type
     if self.hash == GENESIS_HASH then
       --print("GEMESIS BALANCE ", tostring(Balance.genesis))
       return Balance.genesis
     elseif self.balance then
       return self.balance
-    elseif self.type == "open" then
+    elseif blocktype == "open" then
       if self.balance then
         return self.balance
       else
-        local source = assert(Block.find(self.source), "source block not found")
+        local source = Block.find(self.source)
+        if not source then
+          error(("source for open block not found. block: %s"):format(self:debug()))
+        end
         local sent_balance = source:get_send_amount()
         self.balance = sent_balance
         return sent_balance
       end
-    elseif self.type == "receive" then
+    elseif blocktype == "receive" then
       local balance, parent, source
       parent = Block.find(self.previous)
       source = Block.find(self.source)
@@ -265,6 +269,16 @@ local Block_instance = {
       balance = assert(parent:get_balance()) + assert(source:get_send_amount(), "send block balance missing")
       self.balance = balance
       return balance
+    elseif blocktype == "change" or blocktype == "send" then
+      local parent = Block.find(self.previous)
+      assert(parent, "parent for block missing when trying to get balance")
+      local parent_balance = parent:get_balance()
+      if not parent_balance then
+        error(("parent of block has no balance. block: %s. parent: %s"):format(self:debug(), parent:debug()))
+      end
+      return parent_balance
+    else
+      error("unknown blocktype " .. tostring(blocktype) .. " for block " .. self:debug())
     end
   end,
   
