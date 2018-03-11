@@ -119,7 +119,7 @@ function BlockWalker.new(data)
     self.visit = function(block)
       assert(type(block)=="table")
       --print("VISITING ", Util.bytes_to_hex(block.hash))
-      local ret, err = assert(visit(block))
+      local ret, err = visit(block)
       if ret then
         local child = block:get_next()
         if child then

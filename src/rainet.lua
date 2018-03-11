@@ -129,7 +129,7 @@ function Rainet.bootstrap()
   local coro = coroutine.create(function()
     --let's gather some peers first. 50 active peers should be enough
     
-    local fetch, import, verify = true, true, true
+    local fetch, import, verify = false, false, true
     
     if fetch then
       log:debug("bootstrap: preparing database...")
@@ -171,9 +171,14 @@ function Rainet.bootstrap()
       local walker = BlockWalker.new {
         visit = function(block)
           print("verifying block", Util.bytes_to_hex(block.hash))
-          assert(block:verify_ledger())
-          sink:add(block)
-          return true
+          local ok, err = block:verify_ledger()
+          if not ok then
+            log:warn("block verification failed: %s. block %s", err, block:debug())
+            return false
+          else
+            sink:add(block)
+            return true
+          end
         end,
         start = genesis,
         direction = "frontier",
@@ -320,7 +325,6 @@ function Rainet.bulk_pull_accounts()
   }
   
   Bus.pub("bulk_pull:progress",  bus_data)
-  print("done?!")
   return ok, failed, errs
 end
 
