@@ -76,7 +76,7 @@ function DB.initialize()
       temp_store = "FILE",
       foreign_keys = "OFF",
       locking_mode = "EXCLUSIVE",
-      cache_size = "1000000"
+      cache_size = "1000000",
     }
   })
   default_db = db
