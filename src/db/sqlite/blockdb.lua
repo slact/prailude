@@ -22,6 +22,7 @@ local schema = function(tbl_type, tbl_name, skip_indices)
     source               BLOB, --open, receive (source block)
     representative       BLOB, --open, change  (rep account)
     destination          BLOB, --send (destination account)
+    work                 BLOB,
     timestamp            INTEGER,
     genesis_distance     INTEGER,
     balance              BLOB,
@@ -119,8 +120,9 @@ local BlockDB_meta = {__index = {
     stmt:bind(8, self.representative)
     stmt:bind(9, self.destination)
     stmt:bind(10, self.balance and self.balance:pack() or nil)
-    stmt:bind(11, self.timestamp)
-    stmt:bind(12, self.genesis_distance)
+    stmt:bind(11, self.work)
+    stmt:bind(12, self.timestamp)
+    stmt:bind(13, self.genesis_distance)
     stmt:step()
     --TODO: check for sqlite3.BUSY and such responses
     stmt:reset()
@@ -201,12 +203,12 @@ return {
     sql.block_get_by_source = assert(db:prepare("SELECT * FROM blocks WHERE source = ?"), db:errmsg())
     
     sql.block_set = assert(db:prepare("INSERT OR REPLACE INTO blocks " ..
-         "(hash, account, signature, valid, type, previous, source, representative, destination, balance, timestamp, genesis_distance) " ..
-      "VALUES(?,       ?,         ?,     ?,    ?,        ?,      ?,              ?,           ?,       ?,         ?,                ?)", db:errmsg()))
+         "(hash, account, signature, valid, type, previous, source, representative, destination, balance, work, timestamp, genesis_distance) " ..
+      "VALUES(?,       ?,         ?,     ?,    ?,        ?,      ?,              ?,           ?,       ?,    ?,         ?,                ?)", db:errmsg()))
     
-    sql.bootstrap_block_set = assert(db:prepare("INSERT OR REPLACE INTO disktmp.blocks " ..
-         "(hash, account, signature, valid, type, previous, source, representative, destination, balance, timestamp, genesis_distance) " ..
-      "VALUES(?,       ?,         ?,     ?,    ?,        ?,      ?,              ?,           ?,       ?,         ?,                ?)", db:errmsg()))
+    sql.bootstrap_block_set = assert(db:prepare("INSERT OR IGNORE INTO disktmp.blocks " ..
+         "(hash, account, signature, valid, type, previous, source, representative, destination, balance, work, timestamp, genesis_distance) " ..
+      "VALUES(?,       ?,         ?,     ?,    ?,        ?,      ?,              ?,           ?,       ?,    ?,         ?,                ?)", db:errmsg()))
     
     sql.block_update_ledger_validation = assert(db:prepare("UPDATE blocks SET valid = ?, genesis_distance = ? WHERE hash = ?"), db:errmsg())
     
