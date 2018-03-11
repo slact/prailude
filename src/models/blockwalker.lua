@@ -120,15 +120,15 @@ function BlockWalker.new(data)
       assert(type(block)=="table")
       --print("VISITING ", Util.bytes_to_hex(block.hash))
       local ret, err = assert(visit(block))
-      if ret then      
+      if ret then
         local child = block:get_next()
-        if child then 
+        if child then
           unvisited:add(child)
         end
         if block.type == "send" then
           local dst = block:get_destination()
           if dst and dst.type == "open" then
-            unvisited:add(child_hash)
+            unvisited:add(dst)
           end
         end
       end

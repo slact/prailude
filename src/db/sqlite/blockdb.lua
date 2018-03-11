@@ -186,7 +186,26 @@ local BlockDB_meta = {__index = {
     local n = stmt:urows()(stmt)
     stmt:reset()
     return n
-  end
+  end,
+  
+  find_block_by = function(what, val)
+    local stmt
+    if what == "source" then
+      stmt = sql.block_get_by_source
+    elseif what == "previous" then
+      stmt = sql.block_get_by_previous
+    else
+      error("can't find block by " .. tostring(what))
+    end
+    stmt:bind(1, val)
+    local block = stmt:nrows()(stmt)
+    stmt:reset()
+    if block then
+      block = cache:get(block.hash) or Block.new(block)
+    end
+    return block
+  end,
+  
 }}
 
 return {
@@ -212,7 +231,8 @@ return {
     
     sql.block_update_ledger_validation = assert(db:prepare("UPDATE blocks SET valid = ?, genesis_distance = ? WHERE hash = ?"), db:errmsg())
     
-    sql.get_child_hashes = assert(db:prepare("SELECT hash FROM blocks WHERE previous = ? OR source = ?"), db:errmsg())
+    sql.find_by_previous = assert(db:prepare("SELECT * FROM blocks WHERE previous = ?"), db:errmsg())
+    sql.find_by_source = assert(db:prepare("SELECT * FROM blocks WHERE source = ?"), db:errmsg())
     
     sql.blocks_count = assert(db:prepare("SELECT count(*) FROM blocks"), db:errmsg())
     sql.bootstrapped_blocks_count = assert(db:prepare("SELECT count(*) FROM disktmp.blocks"), db:errmsg())

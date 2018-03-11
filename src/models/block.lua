@@ -233,9 +233,13 @@ local Block_instance = {
     end
   end,
   
-  get_child_hashes = function(self)
-    return Block.get_child_hashes(self)
-  end
+  get_next = function(self)
+    return Block.find_block_by("previous", self.hash)
+  end,
+  
+  get_destination = function(self)
+    return Block.find_block_by("source", self.hash)
+  end,
   
 }
 local Block_meta = { __index = Block_instance }
