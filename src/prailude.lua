@@ -16,5 +16,12 @@ local Prailude = {
 
 Prailude.initialize =   Prailude.control.initialize
 Prailude.run =          Prailude.control.run
-
+--[[
+_G.DBG = function(...)
+  local mm = require "mm"
+  for _, v in ipairs {...} do
+    print(mm(v))
+  end
+end
+--]]
 return Prailude
