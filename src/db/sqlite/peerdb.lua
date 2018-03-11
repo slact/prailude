@@ -64,13 +64,14 @@ local PeerDB_meta = {__index = {
   end,
   
   store = function(self)
-    sql.store:bind(1, self.address)
-    sql.store:bind(2, self.port)
-    sql.store:bind(3, self.last_received)
-    sql.store:bind(4, self.last_sent)
-    sql.store:bind(5, self.last_keepalive_sent)
-    sql.store:bind(6, self.last_keepalive_received)
-    sql.store:step()
+    local stmt = sql.store
+    stmt:bind(1, self.address)
+    stmt:bind(2, self.port)
+    stmt:bind(3, self.last_received)
+    stmt:bind(4, self.last_sent)
+    stmt:bind(5, self.last_keepalive_sent)
+    stmt:bind(6, self.last_keepalive_received)
+    stmt:step()
     --TODO: error handling?
     stmt:reset()
     cache:set(self.id, self)
@@ -78,7 +79,7 @@ local PeerDB_meta = {__index = {
   end,
   
   get_best_bootstrap_peer = function()
-  local stmt = sql.get_for_bootstrap
+    local stmt = sql.get_for_bootstrap
     stmt:bind(1, Peer.inactivity_timeout)
     stmt:bind(2, 1)
     local data = stmt:nrows()(stmt)
@@ -117,6 +118,7 @@ local PeerDB_meta = {__index = {
     stmt:bind(2, Peer.keepalive_interval)
     local peers = {}
     for row in stmt:nrows() do
+      --TODO: hit peer cache... maybe?...
       table.insert(peers, Peer.new(row))
     end
     stmt:reset()
