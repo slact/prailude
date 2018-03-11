@@ -111,6 +111,7 @@ local TCPSession_meta = {
       if self.session then
         error("TCP session " .. self.name .. "already running")
       end
+      
       if #self.peer.address == 0 then
         return nil, "invalid empty-address peer"
       end
@@ -122,6 +123,20 @@ local TCPSession_meta = {
       self.name = name
       local session_coro = coroutine_create(session)
       self.session = session_coro
+      self.session_write_callback = function(err)
+        local current_session_coro = self.session
+        if current_session_coro then
+          if current_session_coro ~= session_coro then
+            --this is a write callback for a previous session
+            return nil, "previous session"
+          elseif coroutine_status(current_session_coro) == "suspended" then
+            return coroutine_resume(current_session_coro, not err, err)
+          else
+            return not err, err
+          end
+        end
+      end
+      
       self.buf:clear()
       
       local ok, err
@@ -195,6 +210,9 @@ local TCPSession_meta = {
       if self.session then
         self.session = nil
       end
+      if self.session_write_callback then
+        self.session_write_callback = nil
+      end
       self.idle_timer = Timer.delay(self.idle_ttl, function()
         if not self.session then
           if self.tcp then
@@ -246,18 +264,18 @@ local TCPSession_meta = {
     end,
     
     write = function(self, data)
+      local write_callback = self.session_write_callback
       if not data or #data == 0 then
         error("can't write empty data")
       end
-      self.tcp:write(data, function(err)
-        local session = self.session
-        if session and coroutine_status(session) == "suspended" then
-          return coroutine_resume(session, not err, err)
-        else
-          return not err, err
-        end
-      end)
-      return coroutine_yield()
+      self.tcp:write(data, write_callback)
+      if write_callback then
+        --resume when write finishes
+        return coroutine_yield()
+      else
+        --no callback to tcp:write(), just keep going
+        return true
+      end
     end
   }
 }
