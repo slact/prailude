@@ -349,6 +349,43 @@ local Ed25519Batch = {
   timer = nil
 }
 
+util.Cache = function(mode)
+  if mode == "off" then
+    return {
+      get = function()
+        return nil
+      end,
+      set = function(_, _, val)
+        return val
+      end,
+      clear = function() end,
+      cache = {}
+    }
+  elseif mode == "weak" then
+    --done this way instead of a function lookup index for efficiency
+    local cache
+    local obj = {
+      get = function(_, id)
+        return rawget(cache, id)
+      end,
+      set = function(_, id, value)
+        rawset(cache, id, value)
+        return value
+      end,
+      clear = function()
+        cache = setmetatable({}, {__mode="v"})
+      end,
+      cache = cache,
+    }
+    obj:clear()
+    return obj
+  elseif not mode then
+    error("missing cache mode")
+  else
+    error("unknown cache mode " .. tostring(mode))
+  end
+end
+
 function Ed25519Batch.add(msg, sig, pubkey, coro)
   local batch = Ed25519Batch.batch
   assert(#batch < MAX_BATCH_SIZE)

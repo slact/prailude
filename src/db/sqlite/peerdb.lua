@@ -1,5 +1,6 @@
 local sqlite3 = require "lsqlite3"
 local log = require "prailude.log"
+local Util = require "prailude.util"
 local Peer
 
 local schema = function(tbl_type, tbl_name)
@@ -34,33 +35,30 @@ local db
 local sql = {}
 local sql_peer_update_num = {}
 
-local cache = setmetatable({}, {__mode = "v"})
-local cache_enabled = true
+local cache = Util.Cache("weak")
+
+local peer_id = function(addr, port)
+  return ("%s:%.0f"):format(addr, tonumber(port))
+end
 
 local PeerDB_meta = {__index = {
   find = function(peer_addr, peer_port)
-    local peer, id
-    if cache_enabled then
-      id = ("%s:%.0f"):format(peer_addr, peer_port)
-      peer = cache_enabled and rawget(cache, id)
-    else
-      peer = nil
-    end
-    if peer == false then
+    local id = peer_id(peer_addr, peer_port)
+    local peer = cache:get(id)
+    if peer then
+      return peer
+    elseif peer == false then
       return nil
-    elseif not peer then
-      sql.find:bind(1, peer_addr)
-      sql.find:bind(2, peer_port)
-      peer = sql.find:nrows()(sql.find)
-      sql.find:reset()
+    else
+      local stmt = sql.find
+      stmt:bind(1, peer_addr)
+      stmt:bind(2, peer_port)
+      peer = stmt:nrows()(stmt)
+      stmt:reset()
       if peer then
         peer = Peer.new(peer)
       end
-      if cache_enabled then
-        rawset(cache, id, peer or false)
-      end
-      return peer
-    else
+      cache:set(id, peer or false)
       return peer
     end
   end,
@@ -74,12 +72,8 @@ local PeerDB_meta = {__index = {
     sql.store:bind(6, self.last_keepalive_received)
     sql.store:step()
     --TODO: error handling?
-    sql.store:reset()
-    
-    if cache_enabled then
-      --cache it
-      rawset(cache, self.id, self)
-    end
+    stmt:reset()
+    cache:set(self.id, self)
     return self
   end,
   
@@ -89,7 +83,10 @@ local PeerDB_meta = {__index = {
     stmt:bind(2, 1)
     local data = stmt:nrows()(stmt)
     stmt:reset()
-    return Peer.new(data)
+    if data then
+      local id = peer_id(data.address, data.port)
+      return cache:get(id) or Peer.new(data)
+    end
   end,
   
   get8 = function(except_peer)
@@ -106,6 +103,7 @@ local PeerDB_meta = {__index = {
     end
     local peers = {}
     for row in select:nrows() do
+      --TODO: hit peer cache... maybe?...
       table.insert(peers, Peer.new(row))
     end
     select:reset()

@@ -1,7 +1,7 @@
 local Block
 local sqlite3 = require "lsqlite3"
 local mm = require "mm"
---local Util = require "prailude.util"
+local Util = require "prailude.util"
 
 local schema = function(tbl_type, tbl_name, skip_indices)
   local _, tbl = tbl_name:match("^(.+%.)(.+)")
@@ -46,8 +46,7 @@ end
 
 local sql={}
 
-local cache = setmetatable({}, {__mode="v"})
-local cache_enabled = true
+local cache = Util.Cache("weak")
 
 local db
 local function valid_code(valid)
@@ -68,10 +67,7 @@ end
 
 local BlockDB_meta = {__index = {
   find = function(hash)
-    local block, stmt = nil, sql.block_get
-    if cache_enabled then
-      block = rawget(cache, hash)
-    end
+    local block, stmt = cache:get(hash), sql.block_get
     if block == nil then
       --print("CACHE: block "  .. Util.bytes_to_hex(hash) .. " not in cache")
       stmt:bind(1, hash)
@@ -81,9 +77,7 @@ local BlockDB_meta = {__index = {
       if block then
         block = Block.new(block)
       end
-      if cache_enabled then
-        rawset(cache, hash, block or false)
-      end
+      cache:set(hash, block or false)
       return block
     elseif block == false then
       --print("CACHE: block "  .. Util.bytes_to_hex(hash) .. " does not exist (in cache)")
@@ -98,15 +92,10 @@ local BlockDB_meta = {__index = {
     local blocks = {}
     local stmt = sql.block_get_by_acct
     stmt:bind(1, acct)
-    for _, block in stmt:nrows() do
-      if cache_enabled then
-        local cached_block = rawget(cache, block.hash)
-        if cached_block then
-          --print("CACHE: block "  .. Util.bytes_to_hex(block.hash) .. " found")
-          block = cached_block
-        end
-      end
-      table.insert(blocks, Block.new(block))
+    local block
+    for _, block_data in stmt:nrows() do
+      block = cache:get(block_data.hash) or Block.new(block_data)
+      table.insert(blocks, block)
     end
     stmt:reset()
     return blocks
@@ -135,9 +124,8 @@ local BlockDB_meta = {__index = {
     stmt:step()
     --TODO: check for sqlite3.BUSY and such responses
     stmt:reset()
-    if cache_enabled and opt ~= "bootstrap" then
-      --update cache
-      rawset(cache, self.hash, self)
+    if opt ~= "bootstrap" then
+      cache:set(self.hash, self)
     end
     return self
   end,

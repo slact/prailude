@@ -1,5 +1,6 @@
 local Account
 local sqlite3 = require "lsqlite3"
+local Util = require "prailude.util"
 
 local function schema(tbl_type, tbl_name)
   local _, tbl = tbl_name:match("^(.+%.)(.+)")
@@ -35,19 +36,15 @@ end
 
 local sql = {}
 
-local cache = setmetatable({}, {__mode="v"})
-local cache_bootstrap = setmetatable({}, {__mode="v"})
-local cache_enabled = true
+local cache = Util.Cache("weak")
+local cache_bootstrap = Util.Cache("weak")
 
 local account_update, bootstrap_account_update = {}, {}
 local db
 local AccountDB_meta = {__index = {
   find = function(id, opt)
-    local acct, mycache
-    mycache = opt == "bootstrap" and cache_bootstrap or cache
-    if cache_enabled then
-      acct = rawget(mycache, id)
-    end
+    local mycache = opt == "bootstrap" and cache_bootstrap or cache
+    local acct = mycache:get(id)
     if acct then
       return acct
     elseif acct == false then
@@ -60,15 +57,18 @@ local AccountDB_meta = {__index = {
       if acct then
         acct = Account.new(acct)
       end
-      if cache_enabled then
-        rawset(mycache, id, acct or false)
-      end
+      mycache:set(id, acct or false)
       return acct
     end
   end,
   
   store = function(self, opt)
-    local stmt = opt == "bootstrap" and sql.bootstrap_account_set or sql.account_set
+    local stmt, mycache
+    if opt == "bootstrap" then
+      stmt, mycache = sql.bootstrap_account_update, cache_bootstrap
+    else
+      stmt, mycache = sql.account_set, cache
+    end
   
     stmt:bind(1, self.id)
     stmt:bind(2, self.frontier)
@@ -97,10 +97,9 @@ local AccountDB_meta = {__index = {
     --TODO: check for sqlite3.BUSY and such responses
     stmt:reset()
     
-    if cache_enabled then
     --cache update
-    rawset(opt == "bootstrap" and cache_bootstrap or cache, self.id, self)
-    end
+    
+    mycache:set(self.id, self)
     return self
   end,
   

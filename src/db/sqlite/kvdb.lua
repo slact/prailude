@@ -1,4 +1,5 @@
 local sqlite3 = require "lsqlite3"
+local Util = require "prailude.util"
 
 local schema = [[
   CREATE TABLE IF NOT EXISTS kv (
@@ -13,7 +14,7 @@ local db
 local kv_get, kv_set
 
 local KvDB = {}
-local cache = setmetatable({}, {__mode = "kv"})
+local cache = Util.Cache("weak")
 
 function KvDB.initialize(db_ref)
   db = db_ref
@@ -30,7 +31,7 @@ function KvDB.shutdown()
 end
 
 function KvDB.get(k)
-  local val = rawget(cache, k)
+  local val = cache:get(k)
   if val then
     return val
   elseif val == false then
@@ -41,7 +42,7 @@ function KvDB.get(k)
     end
     val = kv_get:urows()(kv_get)
     kv_get:reset()
-    rawset(cache, k, val or false)
+    cache:set(k, val or false)
     return val
   end
 end
@@ -53,7 +54,7 @@ function KvDB.set(k, v)
   kv_set:step()
   --TODO: check and account for sqlite3.BUSY and such responses
   kv_set:reset()
-  rawset(cache, k, v)
+  cache:set(k, v)
   return v
 end
 
