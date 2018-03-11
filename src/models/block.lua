@@ -227,7 +227,13 @@ local Block_instance = {
       source = Block.find(self.source)
       assert(parent, "parent for receive block missing when trying to get balance")
       assert(source, "source for receive block missing when trying to get balance")
-      balance = parent:get_balance() + source:get_send_amount()
+      local parent_balance, source_balance = (parent:get_balance()), (source:get_balance())
+      if not parent_balance then
+        error(("parent of block has no balance. block: %s. parent: %s"):format(self:debug(), parent:debug()))
+      elseif not source_balance then
+        error(("source of block has no balance. block: %s. parent: %s"):format(self:debug(), source:debug()))
+      end
+      balance = assert(parent:get_balance()) + assert(source:get_send_amount(), "send block balance missing")
       self.balance = balance
       return balance
     end
