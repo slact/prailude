@@ -166,6 +166,35 @@ local Block_instance = {
     return block_typecode[self.type]
   end,
   
+  debug = function(self)
+    local function b2h(b, reverse)
+      if b then
+        return Util.bytes_to_hex(reverse and b:reverse() or b)
+      end
+    end
+    local function acct2r(raw)
+      if raw then return Account.to_readable(raw) end
+    end
+    local out = {"hash: "..b2h(self.hash)}
+    if self.previous then
+      table.insert(out, "prev: "..b2h(self.previous))
+    end
+    if self.source then
+      table.insert(out, "src: "..b2h(self.source))
+    end
+    if self.account then
+      table.insert(out, "acct: "..acct2r(self.account))
+    end
+    
+    if self.destination then
+      table.insert(out, "dst: "..acct2r(self.destination))
+    end
+    if self.balance then
+      table.insert("bal: ".. tostring(self.balance))
+    end
+    return table.concat(out, ", ")
+  end,
+  
   to_json = function(self)
     local function b2h(b, reverse)
       if b then
