@@ -129,7 +129,7 @@ function Rainet.bootstrap()
   local coro = coroutine.create(function()
     --let's gather some peers first. 50 active peers should be enough
     
-    local fetch, import, verify = false, false, true
+    local fetch, import, verify = true, true, true
     
     if fetch then
       log:debug("bootstrap: preparing database...")
