@@ -129,67 +129,42 @@ function Rainet.bootstrap()
   local coro = coroutine.create(function()
     --let's gather some peers first. 50 active peers should be enough
     
-    log:debug("bootstrap: preparing database...")
-    --Frontier.clear_bootstrap()
-    --Block.clear_bootstrap()
+    local fetch, import, verify = true, true, true
+    
+    if fetch then
+      log:debug("bootstrap: preparing database...")
+      Frontier.clear_bootstrap()
+      Block.clear_bootstrap()
+    end
     
     local t0 = os.time()
-    local min_count = 50
+    local min_count = 100
     log:debug("bootstrap: connecting to peers...")
     while Peer.get_active_count() < min_count do
       log:debug("bootstrap: gathering at least %i peers, have %i so far", min_count, Peer.get_active_count())
       Timer.delay(1000)
     end
     
-    do
-      log:debug("bootstrap: fetching frontiers... this should take a few minutes...")
-      --Rainet.fetch_frontiers(3)
-      log:debug("bootstap: finding already synced frontiers...")
-      local already_synced = Frontier.delete_synced_frontiers()
-      log:debug("bootstrap: need to sync %i frontiers (%i already synced)", Frontier.get_size(), already_synced)
-    end
-    
-    log:debug("bootstrap: gathering blocks... this should take 20-50 minutes...")
-    --Rainet.bulk_pull_accounts()
-    
-    log:debug("bootstrap: importing %i blocks... this should take a few minutes...", Block.count_bootstrapped())
-    --Block.import_unverified_bootstrap_blocks()
-    
-    --now start building from accounts closest to genesis
-    --local accts_needing_sync = Util.BatchSource(function(n)
-    --  return Account.get_range_sorted_by_genesis_distance(1000, n)
-    --end)
-    
-    --local accounts_synced = 0
-    --for acct in accts_needing_sync:each() do
-    --  --do per-account stuff
-    --  accounts_synced = accounts_synced + 1
-    --end
-    --[[
-    local sink = Util.BatchSink(5000, function(batch)
-      local acct = {}
-      for  _, block in ipairs(batch) do
-        if not acct[block.account] then
-          acct[block.account]=block:get_account()
-        end
+    if fetch then
+      do
+        log:debug("bootstrap: fetching frontiers... this should take a few minutes...")
+        Rainet.fetch_frontiers(3)
+        log:debug("bootstap: finding already synced frontiers...")
+        local already_synced = Frontier.delete_synced_frontiers()
+        log:debug("bootstrap: need to sync %i frontiers (%i already synced)", Frontier.get_size(), already_synced)
       end
       
-      --begin transaction
-      
-      --end transaction
-    end)
+      log:debug("bootstrap: gathering blocks... this should take 20-50 minutes...")
+      Rainet.bulk_pull_accounts()
+    end
     
+    if import then
+      log:debug("bootstrap: importing %i blocks... this should take a few minutes...", Block.count_bootstrapped())
+      Block.import_unverified_bootstrap_blocks()
+      Block.clear_bootstrap()
+    end
     
-    local unverified_blocks = {}
-    local block_source
-    
-    local genesis = Block.find(Block.genesis.hash)
-    genesis:verify_ledger()
-    table.insert(unverified_blocks,
-    
-    ]]
-    local foo = true
-    if foo then
+    if verify then
       local sink = Util.BatchSink(5000, Block.batch_update_ledger_validation)
       local genesis = Block.find(Block.genesis.hash)
       
