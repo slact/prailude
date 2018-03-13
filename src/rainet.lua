@@ -18,6 +18,10 @@ local coroutine = require "prailude.util.coroutine"
 --local bytes_to_hex = require "prailude.util".bytes_to_hex
 local Rainet = {}
 
+local tdiff = function(t0, t1)
+  return ("%im%is"):format(math.floor((t1-t0)/60), (t1-t0)%60)
+end
+
 local function keepalive()
   --bootstrap
   
@@ -126,10 +130,27 @@ function Rainet.initialize()
 end
 
 function Rainet.bootstrap()
+  local gettime = require "prailude.util.lowlevel".gettime
+  local maybe_interrupt; do
+    local clock = os.clock
+    local tw0 = clock()
+    local n = 0
+    maybe_interrupt = function()
+      n = n+1
+      if n>10000 then
+        n=0
+        if clock() - tw0 > 0.5 then
+          Timer.delay(10)
+          tw0=os.clock()
+        end
+      end
+    end
+  end
+  
   local coro = coroutine.create(function()
     --let's gather some peers first. 50 active peers should be enough
     
-    local fetch, import, verify = true, true, true
+    local fetch, import, verify = false, false, true
     
     if fetch then
       log:debug("bootstrap: preparing database...")
@@ -137,7 +158,8 @@ function Rainet.bootstrap()
       Block.clear_bootstrap()
     end
     
-    local t0 = os.time()
+    local t0 = gettime()
+    local t1, t2
     local min_count = 100
     log:debug("bootstrap: connecting to peers...")
     while Peer.get_active_count() < min_count do
@@ -146,50 +168,113 @@ function Rainet.bootstrap()
     end
     
     if fetch then
-      do
-        log:debug("bootstrap: fetching frontiers... this should take a few minutes...")
-        Rainet.fetch_frontiers(3)
-        log:debug("bootstap: finding already synced frontiers...")
-        local already_synced = Frontier.delete_synced_frontiers()
-        log:debug("bootstrap: need to sync %i frontiers (%i already synced)", Frontier.get_size(), already_synced)
-      end
-      
+      t1 = gettime()
+      log:debug("bootstrap: fetching frontiers... this should take a few minutes...")
+      Rainet.fetch_frontiers(3)
+      t2=gettime()
+      log:debug("bootstap: frontiers fetched in %s. finding already synced frontiers...", tdiff(t1, t2))
+      local already_synced = Frontier.delete_synced_frontiers()
+      log:debug("bootstrap: finished in %s. need to sync %i frontiers (%i already synced)", tdiff(t2, gettime()), Frontier.get_size(), already_synced)
+      t1 = gettime()
       log:debug("bootstrap: gathering blocks... this should take 20-50 minutes...")
       Rainet.bulk_pull_accounts()
+      print("bootstrap: finished gathering blocks in %s", tdiff(t1, gettime()))
     end
     
     if import then
-      log:debug("bootstrap: importing %i blocks... this should take a few minutes...", Block.count_bootstrapped())
-      Block.import_unverified_bootstrap_blocks()
-      Block.clear_bootstrap()
+      local need_to_import = Block.count_bootstrapped()
+      log:debug("bootstrap: importing %i blocks... this should take a few minutes...", need_to_import)
+      local imported = 0
+      local ti0 = gettime()
+      Block.import_unverified_bootstrap_blocks(function(n, t)
+        --progress handler
+        imported = imported + n
+        log:debug("bootstrap: imported %i of %i blocks [%3.2f%%], (%iblocks/sec)", imported, need_to_import, (imported/need_to_import)*100, n/(t))
+      end)
+      log:debug("bootstrap: imported %i blocks in %s", need_to_import, tdiff(ti0, gettime()))
+      --Block.clear_bootstrap()
     end
     
     if verify then
-      local sink = Util.BatchSink(5000, Block.batch_update_ledger_validation)
+      local sink = Util.BatchSink(30000, function(...)
+        maybe_interrupt()
+        return Block.batch_update_ledger_validation(...)
+      end)
       local genesis = Block.find(Block.genesis.hash)
+      local already_valid, verified, retried, failed = 0, 0, 0, 0
       
-      local walker = BlockWalker.new {
-        visit = function(block)
-          print("verifying block", Util.bytes_to_hex(block.hash))
-          local ok, err = block:verify_ledger()
+      local walker
+      
+      local verify_block = function(block)
+        if block:is_valid("ledger") then
+          already_valid = already_valid + 1
+          return true
+        else
+          local ok, err, retry_parent = block:verify_ledger(100)
           if not ok then
-            log:warn("block verification failed: %s. block %s", err, block:debug())
+            if err == "retry" then
+              walker:add(retry_parent)
+              walker:add(block) -- retry it later
+              retried = retried + 1
+            else
+              failed = failed + 1
+              log:warn("block verification failed: %s. block %s", err, block:debug())
+            end
             return false
           else
+            verified = verified + 1
             sink:add(block)
             return true
           end
-        end,
+        end
+      end
+      
+      local function verify_block_and_dependents(block)
+        while verify_block(block) do
+          maybe_interrupt()
+          --print(block:debug())
+          block = block:get_next()
+          if not block then
+            return true
+          end
+          local btype = block.type
+          if btype == "receive" then -- trivially verifiable
+            local src = Block.find(block.source)
+            if src and not src:is_valid("ledger") then
+              -- not a trivially verifiable receive
+              walker:add(src)
+              walker:add(block)
+              --return true
+            end
+          elseif btype == "send" then
+            local dst = block:get_destination()
+            if dst and dst.type == "open" then -- "open" receive blocks are also trivially verifiable
+              verify_block_and_dependents(dst) --TODO: feasible to have a stack overflow here. put an upper limit on this
+            elseif dst then
+              walker:add(dst)
+            end
+          end
+        end
+        return true
+      end
+      
+      walker = BlockWalker.new {
+        visit = verify_block_and_dependents,
         start = genesis,
         direction = "frontier",
       }
       
-      local n = 0
-      --print(mm(walker))
+      local watcher = Timer.interval(1000, function()
+        log:debug("bootstrap: verifying; %i \"already valid\", %i verified, %i failed, %i retries. actual ledger-valid: %i", already_valid, verified, failed, retried, Block.count_valid("ledger"))
+      end)
+      
       while walker:next() do
-        n = n + 1
+        maybe_interrupt()
       end
-      print("walked " .. n .. "blocks")
+      
+      Timer.cancel(watcher)
+      log:debug("bootstrap: verifying finished. %i already valid, %i verified, %i failed, %i retries. actual ledger-valid: %s", already_valid, verified, failed, retried, Block.count_valid("ledger"))
+      
     end
     
     local t3 = os.time()
