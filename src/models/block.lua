@@ -106,59 +106,84 @@ local Block_instance = {
     end
   end,
   
-  verify_ledger = function(self, n)
-    print("VERIFY_LEDGER n: " .. (n or 0) .. " " .. Account.to_readable(self.account) .. " hash:", Util.bytes_to_hex(self.hash), " type:", self.type, " valid:", self.valid)
-    local valid = self.valid
-    if valid == "ledger" or valid == "confirmed" then
+  verify_ledger = function(self, max_depth)
+    max_depth = max_depth or math.huge
+    --print("VERIFY_LEDGER " .. Account.to_readable(self.account) .. " hash:", Util.bytes_to_hex(self.hash), " type:", self.type, "gd:", self.genesis_distance, " valid:", self.valid)
+    local n = 0 --check depth
+    if self:is_valid("ledger") then
       --print("already validated")
-      return true
+      return n
     elseif self.hash == GENESIS_HASH then
       --print("genesis block")
+      self.genesis_distance = 0
       self.valid = "confirmed" --for sure
-      return true
+      return n
+    end
+    
+    if max_depth <= 0 then
+      return nil, "retry", self
     end
     
     local btype = self.type
-    local prev_block_field = btype == "open" and "source" or "previous"
-    --print("prev_block_field:" , prev_block_field)
-    local prev_hash = self[prev_block_field]
-    local prev = Block.find(prev_hash)
     
     --print("prev:", Util.bytes_to_hex(prev_hash), " valid:", prev.valid)
-    
-    if not prev then
-      return nil, ("%s block %s not found"):format(prev_block_field, Util.bytes_to_hex(prev_hash))
-    elseif not assert(prev:verify_ledger((n or 0) + 1)) then
-      return nil, ("%s block %s verification failed"):format(prev_block_field, Util.bytes_to_hex(prev_hash))
+    local prev_block
+    if btype == "open" then
+      if self.account == Account.burn.id then
+        return nil, "someone did the impossible -- find a privkey for the burn account"
+      end
+      --block source has already been verified with the above check
+    else
+      --verify previous block
+      prev_block = Block.find(self.previous)
+      if not prev_block then
+        return nil, ("previous block %s not found"):format(Util.bytes_to_hex(self.previous))
+      end
+      local ok, err, retry = prev_block:verify_ledger(max_depth - 1)
+      if ok then
+        n=n+ok
+        self.genesis_distance = prev_block.genesis_distance + 1
+      elseif err == "retry" then
+        return nil, "retry", retry
+      else
+        return nil, ("previous block %s verification failed: %s"):format(Util.bytes_to_hex(self.previous), err)
+      end
+    end
+      
+    local source_block
+    if self.source then --`receive` or `open` block
+      --was the send directed to this account?
+      source_block = Block.find(self.source)
+      if not source_block then
+        return nil, ("send block %s for '%s' not found"):format(Util.bytes_to_hex(self.source), btype)
+      end
+      if self.account ~= source_block.destination then
+        return nil, ("send block %s's destination does't match"):format(Util.bytes_to_hex(self.source))
+      end
+      local ok, err, retry = source_block:verify_ledger(max_depth - 1)
+      if ok then
+        n = n+ok
+        if btype=="open" then
+          self.genesis_distance = source_block.genesis_distance + 1
+        end
+      elseif err == "retry" then
+        return nil, "retry", retry
+      else
+        return nil, ("source block %s verification failed: %s"):format(Util.bytes_to_hex(self.source), err)
+      end
     end
     
     if btype == "send" then --verify that send didn't add balance (0-sends are OK for the moment)
-      local prev_balance = prev:get_balance()
+      local prev_balance = prev_block:get_balance()
       if self.balance > prev_balance then
         return nil, "send block wrongly credited balance to own account"
       elseif self.balance < Balance.zero then --should be impossible, balance is unsigned
         return nil, "balance cannot be < 0"
       end
     end
-    if self.source then --`receive` or `open` block
-      --was the send directed to this account?
-      local send_block = Block.find(self.source)
-      if not send_block then
-        return nil, ("send block %s for '%s' not found"):format(Util.bytes_to_hex(self.source), btype)
-      end
-      if self.account ~= send_block.destination then
-        return nil, ("send block %s's destination does't match"):format(Util.bytes_to_hex(self.source))
-      end
-    end
-    if btype == "open" then
-      if self.account == Account.burn.id then
-        return nil, "someone did the impossible -- find a privkey for the burn account"
-      end
-      --block source has already been verified with the above check
-    end
     
     self.valid = "ledger"
-    return true
+    return n
   end,
   
   --verify_ledger --defined further down

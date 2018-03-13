@@ -16,12 +16,12 @@ local BlockWalker = {}
 
 local BlockWalker_instance = {
   add = function(self, block) --add block to visit
-    return self.unvisited.sink:add(block)
+    return self.unvisited:add(block)
   end,
   
   next = function(self)
     local next_block = self.unvisited:next()
-        print("BlockWalker NEXT!!!!!", Util.bytes_to_hex(next_block.hash))
+    --print("BlockWalker NEXT!!!!!", Util.bytes_to_hex(next_block.hash))
     if next_block then
       return self.visit(next_block)
     end
@@ -30,7 +30,6 @@ local BlockWalker_instance = {
   each = function(self)
     local unvisited, visit = self.unvisited, self.visit
     return function()
-      print("nexyt!")
       local next_block = unvisited:next()
       if next_block then
         return visit(next_block)
@@ -105,6 +104,7 @@ function BlockWalker.new(data)
       for _, obj in ipairs(start) do
         n = n+1
         assert(Block.is_instance(obj), "at least one start position is not a block")
+        
         unvisited:add(obj)
       end
       assert(n>=1, "must have at least 1 starting block")
@@ -114,28 +114,8 @@ function BlockWalker.new(data)
     end
   end
   
-  do
-    local visit = data.visit
-    self.visit = function(block)
-      assert(type(block)=="table")
-      --print("VISITING ", Util.bytes_to_hex(block.hash))
-      local ret, err = visit(block)
-      if ret then
-        local child = block:get_next()
-        if child then
-          unvisited:add(child)
-        end
-        if block.type == "send" then
-          local dst = block:get_destination()
-          if dst and dst.type == "open" then
-            unvisited:add(dst)
-          end
-        end
-      end
-      return ret, err
-    end
-  end
-  
+  self.visit = data.visit
+    
   return setmetatable(self, BlockWalker_meta)
 end
 
