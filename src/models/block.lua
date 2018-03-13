@@ -201,6 +201,8 @@ local Block_instance = {
       if raw then return Account.to_readable(raw) end
     end
     local out = {"hash: "..b2h(self.hash)}
+    table.insert(out, "type: ".. self.type)
+    table.insert(out, "valid: "..(self.valid or "none"))
     if self.previous then
       table.insert(out, "prev: "..b2h(self.previous))
     end
@@ -215,7 +217,7 @@ local Block_instance = {
       table.insert(out, "dst: "..acct2r(self.destination))
     end
     if self.balance then
-      table.insert("bal: ".. tostring(self.balance))
+      table.insert(out, "bal: ".. tostring(self.balance))
     end
     return table.concat(out, ", ")
   end,
