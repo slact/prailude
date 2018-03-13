@@ -24,7 +24,7 @@ local sql = {}
 
 local BlockWalkerDB_meta = {__index = {
   store_page = function(walk_id, page_id, batch)
-    local stmt = sql.store_page
+    local stmt = sql.store
     assert(db:exec("BEGIN EXCLUSIVE TRANSACTION") == sqlite3.OK, db:errmsg())
     for _, hash in ipairs(batch) do
       stmt:bind(1, walk_id)
