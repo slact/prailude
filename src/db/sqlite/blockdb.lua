@@ -3,9 +3,33 @@ local sqlite3 = require "lsqlite3"
 local mm = require "mm"
 local Util = require "prailude.util"
 
-local schema = function(tbl_type, tbl_name, skip_indices)
+local function indices(what, tbl_name)
   local _, tbl = tbl_name:match("^(.+%.)(.+)")
+  local idxes = {
+    _account_idx = "account",
+    _prev_idx = "previous",
+    _valid_idx = "valid",
+    _type_idx = "type",
+    _source_idx = "source",
+    _rep_idx = "representative",
+    _dst_idx = "destination"
+  }
+  
   if not tbl then tbl = tbl_name end
+  local ret = {}
+  for idx, col in pairs(idxes) do
+    local line
+    if what == "drop" then
+      line = ("DROP INDEX %s%s;"):format(tbl_name, idx)
+    else
+      line = ("CREATE INDEX IF NOT EXISTS %s%s     ON %s(%s);"):format(tbl_name, idx, tbl, col)
+    end
+    table.insert(ret, line)
+  end
+  return table.concat(ret, "\n")
+end
+
+local schema = function(tbl_type, tbl_name, skip_indices)
   local schema = [[
   CREATE ]]..tbl_type..[[ IF NOT EXISTS ]]..tbl_name..[[ (
     hash                 BLOB,
@@ -25,24 +49,16 @@ local schema = function(tbl_type, tbl_name, skip_indices)
     work                 BLOB,
     timestamp            INTEGER,
     genesis_distance     INTEGER,
-    balance              BLOB,
-
-    PRIMARY KEY(hash)
-  ) WITHOUT ROWID;
-  ]]
+    balance              BLOB]]
   if not skip_indices then
-    schema = schema .. [[
-    CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_account_idx      ON ]]..tbl..[[ (account);
-    CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_prev_idx         ON ]]..tbl..[[ (previous);
-    CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_valid_idx        ON ]]..tbl..[[ (valid);
-    CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_type_idx         ON ]]..tbl..[[ (type);
-    CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_source_idx       ON ]]..tbl..[[ (source);
-    CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_rep_idx          ON ]]..tbl..[[ (representative);
-    CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_dst_idx          ON ]]..tbl..[[ (destination);
-    --CREATE INDEX IF NOT EXISTS ]]..tbl_name..[[_balance_idx      ON ]]..tbl..[[ (balance);
-    ]]
+    schema = schema .. ",\n  PRIMARY KEY(hash)\n  ) WITHOUT ROWID;\n"
+  else
+    schema = schema .. "\n  );\n"
   end
-  return  schema
+  if not skip_indices then
+    schema = schema .. indices("create", tbl_name)
+  end
+  return schema
 end
 
 local sql={}
@@ -158,8 +174,34 @@ local BlockDB_meta = {__index = {
     assert(db:exec("DELETE FROM disktmp.blocks") == sqlite3.OK, db:errmsg())
   end,
   
-  import_unverified_bootstrap_blocks = function()
-    return assert(db:exec("INSERT OR REPLACE INTO blocks SELECT * FROM disktmp.blocks") == sqlite3.OK, db:errmsg())
+  import_unverified_bootstrap_blocks = function(progress_callback)
+    local gettime = require "prailude.util.lowlevel".gettime
+    local block_count, import_block_count = Block.count(), Block.count_bootstrapped()
+    
+    local reindex = block_count + import_block_count > block_count * 1.20
+      -- anything above a 20% differentce should trigger a reindex
+    if reindex then
+      print("drop block index during import")
+      assert(db:exec(indices("drop", "blocks")) == sqlite3.OK, db:errmsg())
+    end
+    local n = 1000000
+    local t0 = gettime()
+    if progress_callback then
+      db:progress_handler(n, function()
+        local t1 = gettime()
+        progress_callback(n, t1 - t0)
+        t0 = t1
+        return false
+      end)
+    end
+    assert(db:exec("INSERT OR IGNORE INTO blocks SELECT * FROM disktmp.blocks;") == sqlite3.OK, db:errmsg())
+    if reindex then
+      assert(db:exec(indices("create", "blocks")) == sqlite3.OK, db:errmsg())
+    end
+    if progress_callback then
+      db:progress_handler(nil, nil)
+    end
+    return db:changes()
   end,
   
   get_child_hashes = function(block)
@@ -234,8 +276,9 @@ return {
     sql.find_by_previous = assert(db:prepare("SELECT * FROM blocks WHERE previous = ?"), db:errmsg())
     sql.find_by_source = assert(db:prepare("SELECT * FROM blocks WHERE source = ?"), db:errmsg())
     
-    sql.blocks_count = assert(db:prepare("SELECT count(*) FROM blocks"), db:errmsg())
-    sql.bootstrapped_blocks_count = assert(db:prepare("SELECT count(*) FROM disktmp.blocks"), db:errmsg())
+    sql.blocks_count = assert(db:prepare("SELECT COUNT(*) FROM blocks"), db:errmsg())
+    sql.blocks_count_valid = assert(db:prepare("SELECT COUNT(*) FROM blocks WHERE valid >= ?"), db:errmsg())
+    sql.bootstrapped_blocks_count = assert(db:prepare("SELECT COUNT(*) FROM disktmp.blocks"), db:errmsg())
     
     setmetatable(Block, BlockDB_meta)
   end,
