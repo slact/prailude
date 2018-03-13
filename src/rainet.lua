@@ -137,7 +137,7 @@ function Rainet.bootstrap()
     local n = 0
     maybe_interrupt = function()
       n = n+1
-      if n>10000 then
+      if n>30000 then
         n=0
         if clock() - tw0 > 0.5 then
           Timer.delay(10)
@@ -206,6 +206,7 @@ function Rainet.bootstrap()
       local walker
       
       local verify_block = function(block)
+        maybe_interrupt()
         if block:is_valid("ledger") then
           already_valid = already_valid + 1
           return true
@@ -248,7 +249,7 @@ function Rainet.bootstrap()
             end
           elseif btype == "send" then
             local dst = block:get_destination()
-            if dst and dst.type == "open" then -- "open" receive blocks are also trivially verifiable
+            if dst and not dst:is_valid("ledger") then -- "open" receive blocks are also trivially verifiable
               verify_block_and_dependents(dst) --TODO: feasible to have a stack overflow here. put an upper limit on this
             elseif dst then
               walker:add(dst)
