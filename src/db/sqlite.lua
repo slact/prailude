@@ -76,9 +76,8 @@ function DB.initialize()
       temp_store = "FILE",
       foreign_keys = "OFF",
       locking_mode = "EXCLUSIVE",
-      cache_size = "1000000",
-      page_size = 40960,
-      threads = 10,
+      cache_size = "-400000", --200MB max cachesize
+      page_size = 16384,
     }
   })
   default_db = db
@@ -88,7 +87,7 @@ function DB.initialize()
     ["disktmp.synchronous"] = false, --don't really care if the db lags behind on crash
     ["disktmp.journal_mode"] = false,
     ["disktmp.foreign_keys"] = false,
-    ["disktmp.page_size"] = 40960
+    ["disktmp.page_size"] = 16384
   })
   
   for _, subdb in ipairs(subdbs) do
