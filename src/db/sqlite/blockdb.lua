@@ -230,6 +230,14 @@ local BlockDB_meta = {__index = {
     return n
   end,
   
+  count_valid = function(valid)
+    local stmt = sql.blocks_count_valid
+    stmt:bind(1, assert(valid_code(valid)))
+    local n = stmt:urows()(stmt)
+    stmt:reset()
+    return n
+  end,
+  
   find_block_by = function(what, val)
     local stmt
     if what == "source" then
@@ -254,7 +262,7 @@ return {
   initialize = function(db_ref)
     Block = require "prailude.block"
     db = db_ref
-    
+    print(schema("TABLE", "disktmp.blocks"))
     assert(db:exec(schema("TABLE", "blocks")) == sqlite3.OK, db:errmsg())
     assert(db:exec(schema("TABLE", "disktmp.blocks", true)) == sqlite3.OK, db:errmsg())
     
