@@ -75,10 +75,11 @@ Timer.delay(1000000000, function() end)
 uv.run()
 ]]
 
-
+--[[
 Timer.interval(5000, function()
   print("Memory use:" ..  math.ceil(collectgarbage("count")) .. "Kb.")
   --collectgarbage("collect")
   --print("After GC  :" ..  collectgarbage("count") .. "Kb ")
 end)
+   ]]
 prailude.run()
