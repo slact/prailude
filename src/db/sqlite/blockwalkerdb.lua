@@ -9,9 +9,9 @@ local schema = function(tbl_type, tbl_name)
   CREATE ]] .. tbl_type .. [[ IF NOT EXISTS ]] .. tbl_name .. [[ (
     walk_id                  INTEGER,
     page_id                  INTEGER,
-    block                    TEXT
+    acct                     TEXT
   );
-  CREATE UNIQUE INDEX IF NOT EXISTS ]] .. tbl_name .. [[_unique_block_idx       ON ]] .. tbl .. [[ (walk_id, block);
+  CREATE UNIQUE INDEX IF NOT EXISTS ]] .. tbl_name .. [[_unique_acct_idx       ON ]] .. tbl .. [[ (walk_id, acct);
   CREATE INDEX IF NOT EXISTS ]] .. tbl_name ..        [[_page_idx               ON ]] .. tbl .. [[ (page_id);
   CREATE INDEX IF NOT EXISTS ]] .. tbl_name ..        [[_walk_idx               ON ]] .. tbl .. [[ (walk_id);
 ]]
@@ -26,10 +26,10 @@ local BlockWalkerDB_meta = {__index = {
   store_page = function(walk_id, page_id, batch)
     local stmt = sql.store
     assert(db:exec("BEGIN EXCLUSIVE TRANSACTION") == sqlite3.OK, db:errmsg())
-    for _, hash in ipairs(batch) do
+    for _, acct_id in ipairs(batch) do
       stmt:bind(1, walk_id)
       stmt:bind(2, page_id)
-      stmt:bind(3, hash)
+      stmt:bind(3, acct_id)
       stmt:step()
       stmt:reset()
     end
@@ -37,12 +37,12 @@ local BlockWalkerDB_meta = {__index = {
   end,
   
   restore_page = function(walk_id, page_id)
-    local hashes = {}
+    local items = {}
     local stmt = sql.get_page
     stmt:bind(1, walk_id)
     stmt:bind(2, page_id)
-    for hash in stmt:urows() do
-      table.insert(hashes, hash)
+    for acct_id in stmt:urows() do
+      table.insert(items, acct_id)
     end
     stmt:reset()
     
@@ -51,7 +51,7 @@ local BlockWalkerDB_meta = {__index = {
     stmt:bind(2, page_id)
     stmt:reset()
     
-    return hashes
+    return items
   end,
   
   get_page_size = function(walk_id, page_id)
@@ -87,10 +87,10 @@ return {
     
     assert(db:exec(schema("TABLE", "blockwalker")) == sqlite3.OK, db:errmsg())
     
-    sql.store = assert(db:prepare("INSERT OR IGNORE INTO blockwalker (walk_id, page_id, block) VALUES(?, ?, ?)"), db:errmsg())
+    sql.store = assert(db:prepare("INSERT OR IGNORE INTO blockwalker (walk_id, page_id, acct) VALUES(?, ?, ?)"), db:errmsg())
     
     sql.page_size = assert(db:prepare("SELECT COUNT(*) FROM blockwalker WHERE walk_id = ? AND page_id = ?"), db:errmsg())
-    sql.get_page = assert(db:prepare("SELECT block FROM blockwalker WHERE walk_id = ? AND page_id = ?"), db:errmsg())
+    sql.get_page = assert(db:prepare("SELECT acct FROM blockwalker WHERE walk_id = ? AND page_id = ?"), db:errmsg())
     sql.delete_page = assert(db:prepare("DELETE FROM blockwalker WHERE walk_id = ? AND page_id = ?"), db:errmsg())
     
     sql.delete = assert(db:prepare("DELETE FROM blockwalker WHERE walk_id = ?"), db:errmsg())

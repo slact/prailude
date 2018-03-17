@@ -26,6 +26,13 @@ local block_typecode = {
   change =        5
 }
 
+local required_fields = {
+  send = {    [true] = {"previous", "destination", "balance"},  [false] = {"representative", "source"}},
+  receive = { [true] = {"previous", "source"},                  [false] = {"representative", "destination"}},
+  open = {    [true] = {"source", "representative", "account"}, [false] = {"destination"}},
+  change = {  [true] = {"previous", "representative"},          [false] = {"source", "destination"}}
+}
+
 local GENESIS_HASH
 
 local Block_instance = {
@@ -106,84 +113,91 @@ local Block_instance = {
     end
   end,
   
-  verify_ledger = function(self, max_depth)
-    max_depth = max_depth or math.huge
+  verify_ledger = function(self)
     --print("VERIFY_LEDGER " .. Account.to_readable(self.account) .. " hash:", Util.bytes_to_hex(self.hash), " type:", self.type, "gd:", self.genesis_distance, " valid:", self.valid)
-    local n = 0 --check depth
     if self:is_valid("ledger") then
       --print("already validated")
-      return n
+      return true
     elseif self.hash == GENESIS_HASH then
       --print("genesis block")
       self.genesis_distance = 0
       self.valid = "confirmed" --for sure
-      return n
-    end
-    
-    if max_depth <= 0 then
-      return nil, "retry", self
+      return true
     end
     
     local btype = self.type
+    --check that the block types have the expected fields
+    for must_exist, fset in ipairs(required_fields[btype]) do
+      for _, field in ipairs(fset) do
+        if must_exist and not self[field] then
+          return nil, ("%s block is missing %s field"):format(btype, field)
+        elseif not must_exist and self[field] then
+          return nil, ("%s block has a %s field -- and it shouldn't"):format(btype, field)
+        end
+      end
+    end
     
     --print("prev:", Util.bytes_to_hex(prev_hash), " valid:", prev.valid)
     local prev_block
-    if btype == "open" then
+    if not self.previous then --open block
+      assert(btype == "open")
       if self.account == Account.burn.id then
         return nil, "someone did the impossible -- find a privkey for the burn account"
       end
-      --block source has already been verified with the above check
     else
       --verify previous block
-      prev_block = Block.find(self.previous)
+      prev_block = self:get_previous()
+      --print("VERIFY: PREVIOUS IS", prev_block:debug())
       if not prev_block then
         return nil, ("previous block %s not found"):format(Util.bytes_to_hex(self.previous))
-      end
-      local ok, err, retry = prev_block:verify_ledger(max_depth - 1)
-      if ok then
-        n=n+ok
-        self.genesis_distance = prev_block.genesis_distance + 1
-      elseif err == "retry" then
-        return nil, "retry", retry
-      else
-        return nil, ("previous block %s verification failed: %s"):format(Util.bytes_to_hex(self.previous), err)
+      elseif not prev_block:is_valid("ledger") then
+        return nil, "retry"
       end
     end
       
     local source_block
     if self.source then --`receive` or `open` block
+      assert(btype == "receive" or btype == "open")
       --was the send directed to this account?
-      source_block = Block.find(self.source)
+      source_block = self:get_source()
       if not source_block then
         return nil, ("send block %s for '%s' not found"):format(Util.bytes_to_hex(self.source), btype)
+      elseif not source_block:is_valid("ledger") then
+        return nil, "retry"
       end
       if self.account ~= source_block.destination then
-        return nil, ("send block %s's destination does't match"):format(Util.bytes_to_hex(self.source))
-      end
-      local ok, err, retry = source_block:verify_ledger(max_depth - 1)
-      if ok then
-        n = n+ok
-        if btype=="open" then
-          self.genesis_distance = source_block.genesis_distance + 1
-        end
-      elseif err == "retry" then
-        return nil, "retry", retry
-      else
-        return nil, ("source block %s verification failed: %s"):format(Util.bytes_to_hex(self.source), err)
+        return nil, ("send block %s's destination doesn't match"):format(Util.bytes_to_hex(self.source))
       end
     end
     
-    if btype == "send" then --verify that send didn't add balance (0-sends are OK for the moment)
+    if not self.balance then
+      self:get_balance() -- fill in the blanks. auto-sets self.balance
+    elseif self.source and self.destination then
+      error("this is something ublocks might do. this is not supported yet")
+    elseif self.destination then
+      --TODO: u-block compatibility
+      assert(btype == "send")
       local prev_balance = prev_block:get_balance()
       if self.balance > prev_balance then
         return nil, "send block wrongly credited balance to own account"
       elseif self.balance < Balance.zero then --should be impossible, balance is unsigned
         return nil, "balance cannot be < 0"
       end
+    elseif self.source then
+      local source_amount = source_block and source_block:get_send_amount() or Balance.zero
+      local prev_balance = prev_block and prev_block:get_balance() or Balance.zero
+      if(self.balance ~= source_amount + prev_balance) then
+        return nil, "balance doesn't match send + previous"
+      end
     end
-    
+  
+    self.genesis_distance = (prev_block or source_block).genesis_distance + 1
     self.valid = "ledger"
-    return n
+    return true
+  end,
+  
+  update_ledger_validation = function(self)
+    return Block.update_ledger_validation(self)
   end,
   
   --verify_ledger --defined further down
@@ -200,7 +214,12 @@ local Block_instance = {
     local function acct2r(raw)
       if raw then return Account.to_readable(raw) end
     end
-    local out = {"hash: "..b2h(self.hash)}
+    local mt = getmetatable(self)
+    setmetatable(self, nil)
+    local tid = tostring(self)
+    setmetatable(self, mt)
+    
+    local out = {tid, "hash: "..b2h(self.hash)}
     table.insert(out, "type: ".. self.type)
     table.insert(out, "valid: "..(self.valid or "none"))
     if self.previous then
@@ -249,6 +268,9 @@ local Block_instance = {
     assert(self.account, "gotta have an account")
     return Block.store(self, opt)
   end,
+  store_later = function(self)
+    return Block.store_later(self)
+  end,
   
   get_account = function(self)
     return Account.find(assert(self.account, "gotta have an account"))
@@ -260,6 +282,14 @@ local Block_instance = {
     --print(debug.traceback())
     --print("GET_SEND_AMOUNT", prev_balance > own_balance, Util.bytes_to_hex(self.hash), Account.to_readable(self.account), prev_balance, own_balance)
     return prev_balance - own_balance
+  end,
+  
+  get_prev_balance = function(self)
+    if self.type == "open" then
+      return Balance.zero
+    else
+      return self:get_previous():get_balance()
+    end
   end,
   
   get_balance = function(self)
@@ -311,6 +341,14 @@ local Block_instance = {
   
   get_next = function(self)
     return Block.find_block_by("previous", self.hash)
+  end,
+  
+  get_previous = function(self)
+    local b =  Block.find(self.previous)
+    return b
+  end,
+  get_source = function(self)
+    return Block.find(self.source)
   end,
   
   get_destination = function(self)

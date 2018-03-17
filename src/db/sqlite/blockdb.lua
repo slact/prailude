@@ -7,6 +7,7 @@ local function indices(what, tbl_name)
   local _, tbl = tbl_name:match("^(.+%.)(.+)")
   local idxes = {
     _account_idx = "account",
+    _account_and_type_idx = "account, type",
     _prev_idx = "previous",
     _valid_idx = "valid",
     _type_idx = "type",
@@ -142,10 +143,16 @@ local BlockDB_meta = {__index = {
     stmt:step()
     --TODO: check for sqlite3.BUSY and such responses
     stmt:reset()
-    if opt ~= "bootstrap" then
+    if opt ~= "bootstrap" and not self.__already_cached then
       cache:set(self.hash, self)
+      self.__already_cached = true
     end
     return self
+  end,
+  
+  store_later = function(self)
+    cache:set(self.hash, self)
+    self.__already_cached = true
   end,
   
   batch_store_bootstrap = function(batch)
@@ -156,18 +163,16 @@ local BlockDB_meta = {__index = {
     assert(db:exec("COMMIT TRANSACTION") == sqlite3.OK, db:errmsg())
   end,
   
-  batch_update_ledger_validation = function(batch)
-    print("update batch of size " .. #batch)
+  
+  
+  update_ledger_validation = function(self)
     local stmt = sql.block_update_ledger_validation
-    assert(db:exec("BEGIN EXCLUSIVE TRANSACTION") == sqlite3.OK, db:errmsg())
-    for _, block in ipairs(batch) do
-        stmt:bind(1, valid_code(block.valid))
-        stmt:bind(2, block.genesis_distance)
-        stmt:bind(3, block.hash)
-        stmt:step()
-        stmt:reset()
-    end
-    assert(db:exec("COMMIT TRANSACTION") == sqlite3.OK, db:errmsg())
+    stmt:bind(1, valid_code(self.valid))
+    stmt:bind(2, self.genesis_distance)
+    stmt:bind(3, self.hash)
+    stmt:step()
+    stmt:reset()
+    return self
   end,
   
   clear_bootstrap = function()
@@ -256,13 +261,23 @@ local BlockDB_meta = {__index = {
     return block
   end,
   
+  find_open_for_account = function(acct_id)
+    local stmt = sql.find_open_by_account
+    stmt:bind(1, acct_id)
+    local block = stmt:nrows()(stmt)
+    stmt:reset()
+    if block then
+      return cache:get(block.hash) or Block.new(block)
+    end
+  end
+  
+  
 }}
 
 return {
   initialize = function(db_ref)
     Block = require "prailude.block"
     db = db_ref
-    print(schema("TABLE", "disktmp.blocks"))
     assert(db:exec(schema("TABLE", "blocks")) == sqlite3.OK, db:errmsg())
     assert(db:exec(schema("TABLE", "disktmp.blocks", true)) == sqlite3.OK, db:errmsg())
     
@@ -281,6 +296,7 @@ return {
     
     sql.block_update_ledger_validation = assert(db:prepare("UPDATE blocks SET valid = ?, genesis_distance = ? WHERE hash = ?"), db:errmsg())
     
+    sql.find_open_by_account = assert(db:prepare("SELECT * FROM blocks WHERE type = 'open' AND account = ? LIMIT 1"), db:errmsg())
     sql.find_by_previous = assert(db:prepare("SELECT * FROM blocks WHERE previous = ?"), db:errmsg())
     sql.find_by_source = assert(db:prepare("SELECT * FROM blocks WHERE source = ?"), db:errmsg())
     

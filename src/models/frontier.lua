@@ -85,7 +85,7 @@ function Frontier.fetch(peer, watchdog_callback)
         --got some new frontiers
         for _, frontier in ipairs(fresh_frontiers) do
           frontier.pull_id = pull_id
-          frontier.stored_frontier, frontier.genesis_distance = Account.get_frontier_and_genesis_distance(frontier.account)
+          frontier.stored_frontier = Account.get_frontier(frontier.account)
           sink:add(Frontier.new(frontier))
         end
         frontiers_count_so_far = frontiers_count_so_far + #fresh_frontiers

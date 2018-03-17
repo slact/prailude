@@ -6,7 +6,7 @@ local Peer = require "prailude.peer"
 local Message = require "prailude.message"
 local Parser = require "prailude.util.parser"
 local NilDB = require "prailude.db.nil" -- no database
-local util = require "prailude.util"
+local Util = require "prailude.util"
 local Block
 
 local Account = {}
@@ -19,7 +19,37 @@ local Account_meta = { __index = {
   update_balance = function(self)
     Account.update(self, "balance")
     return self
-  end
+  end,
+  update = function(self, ...)
+    return Account.update(self, ...)
+  end,
+  
+  save = function(...)
+    return Account.save(...)
+  end,
+  create_later = function(...)
+    return Account.create_later(...)
+  end,
+  save_later = function(...)
+    return Account.save_later(...)
+  end,
+  store = function(self)
+    return Account.store(self)
+  end,
+  
+  debug = function(self)
+    local out = {}
+    local mt = getmetatable(self)
+    setmetatable(self, nil)
+    local tbl_id = tostring(self)
+    setmetatable(self, mt)
+    table.insert(out, tbl_id)
+    table.insert(out, self.id and Account.to_readable(self.id) or "no_account_id")
+    table.insert(out, self.frontier and Util.bytes_to_hex(self.frontier) or "no_frontier")
+    table.insert(out, self.representative and Account.to_readable(self.representative) or "no_representative")
+    table.insert(out, self.delegated_balance or "no_delegated_balance")
+    return table.concat(out, ", ")
+  end,
 },
 __tostring = function(self)
   return Account.to_readable(self.id)
@@ -36,23 +66,30 @@ function Account.new(id, frontier)
       frontier = frontier
     }
   end
-  return setmetatable(data, Account_meta)
+  setmetatable(data, Account_meta)
+  return data
 end
 
 function Account.get(id) --always returns the account, regardless if it exists in db or not
+  local new = false
   local acct = Account.find(id)
   if not acct then
     acct = Account.new(id)
+    new = true
   end
-  return acct
+  return acct, new
 end
 
 function Account.to_bytes(str)
-  return util.pack_account(str)
+  return Util.pack_account(str)
 end
 
 function Account.to_readable(raw)
-  return util.unpack_account(raw)
+  return Util.unpack_account(raw)
+end
+
+function Account.is_instance(obj)
+  return type(obj) == "table" and getmetatable(obj) == Account_meta
 end
 
 function Account.bulk_pull(frontier, peer, opt)
@@ -129,7 +166,7 @@ function Account.bulk_pull(frontier, peer, opt)
     while tcp:read() do
     local buf = tcp.buf:flush()
       --print("buf", #buf)
-      --print(util.bytes_to_hex_debug(buf))
+      --print(Util.bytes_to_hex_debug(buf))
       --print("")
       fresh_blocks, leftovers_or_err, done = Parser.unpack_bulk(buf)
       --print("fresh blocks", fresh_blocks and #fresh_blocks or "none", tostring(peer))
@@ -186,7 +223,7 @@ function Account.bulk_pull(frontier, peer, opt)
   end, watchdog_wrapper)
 end
 
-Account.burn = Account.new {id=util.hex_to_bytes("0000000000000000000000000000000000000000000000000000000000000000")}
+Account.burn = Account.new {id=Util.hex_to_bytes("0000000000000000000000000000000000000000000000000000000000000000")}
 
 ------------
 -- database stuff is in db/[db_type]/frontierdb.lua

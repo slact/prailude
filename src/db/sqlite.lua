@@ -39,7 +39,11 @@ function DB.open(name, opt)
 end
 
 function DB.db(name)
-  return assert(dbs[name])
+  if name then
+    return assert(dbs[name])
+  else
+    return default_db
+  end
 end
 
 function DB.transaction(db, fn)
