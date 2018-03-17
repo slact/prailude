@@ -17,6 +17,13 @@ local util = {}
 do
   local batchsink_mt = {__index={
     add = function(self, data)
+      local add_filter = rawget(self, "add_filter")
+      if add_filter then
+        data = add_filter(data)
+        if data == nil then
+          return self
+        end
+      end
       table.insert(self.batch, data)
       if self:full() then
         return self:consume()
@@ -47,6 +54,7 @@ do
     return setmetatable({
       __consume = opt.consume,
       batch_size  = opt.batch_size,
+      add_filter = opt.add_filter,
       batch = {},
     }, batchsink_mt)
   end
@@ -124,13 +132,16 @@ local PageQueue; do
         self.first, self.last = 1, #self.data
       end
       
+
       if (new_state == "idle" or new_state == "stored") and state == "active" then
         --idle pages only store compressed data
         local store_item, data, newdata = self.store_item, self.data, {}
-        for i=self.first, self.last do
-          local item = store_item(data[i], "idle")
-          assert(item ~= nil, "store_item gave a nil result")
-          table.insert(newdata, item)
+        if data then
+          for i=self.first, self.last do
+            local item = store_item(data[i], "idle")
+            assert(item ~= nil, "store_item gave a nil result")
+            table.insert(newdata, item)
+          end
         end
         self.data, self.first, self.last = newdata, nil, nil
       end
@@ -142,6 +153,9 @@ local PageQueue; do
       return self
     end,
     
+    append = function(self, ...)
+      return self:add(...)
+    end,
     add = function(self, item)
       local state = self.state
       item = self.store_item(item, state)
@@ -162,6 +176,24 @@ local PageQueue; do
         table.insert(data, item)
       else
         error("can't add block to " .. tostring(state) .. " page")
+      end
+      return true
+    end,
+    
+    prepend = function(self, item)
+      local state = self.state
+      assert(state == "active", "can only prepend to active pages")
+      item = self.store_item(item, state)
+      local data = self.data
+      if not data then
+        data = {}
+        self.data = data
+      end
+      local first = (rawget(self,"first") or 0) - 1
+      rawset(data, first, item)
+      rawset(self, "first", first)
+      if not self.last then
+        self.last = first
       end
       return true
     end,
@@ -221,6 +253,7 @@ local PageQueue; do
       store_item = data_handlers.store_item,
       store_page = data_handlers.store_page,
       load_page = data_handlers.load_page,
+      stored_page_size = data_handlers.stored_page_size,
       
       state=state
     }, Page_meta)
@@ -230,10 +263,7 @@ local PageQueue; do
   local PageQueue_meta = {__index = {
     pagesize = 5000,
     add = function(self, item)
-      local lastpage = self.last_page
-      if not lastpage then
-        lastpage = self:add_page()
-      end
+      local lastpage = self.last_page or self:add_page()
       if lastpage:count() < self.pagesize then
         return lastpage:add(item)
       else
@@ -241,7 +271,18 @@ local PageQueue; do
         return self:add(item)
       end
     end,
-    
+    append = function(self, ...)
+      return self:add(...)
+    end,
+    prepend = function(self, item)
+      local firstpage = self.first_page or self:add_page()
+      if firstpage:count() < self.pagesize then
+        return firstpage:prepend(item)
+      else
+        self:prepend_page()
+        return self:prepend(item)
+      end
+    end,
     add_page = function(self)
       local next_page_id = self.next_page_id or 0
       self.next_page_id = next_page_id + 1
@@ -258,6 +299,24 @@ local PageQueue; do
       table.insert(self.pages, page)
       self.last_page = page
       return page
+    end,
+    prepend_page = function(self)
+      if self.first_page == nil then
+        return self:add_page() --equivalent to appending page
+      end
+      --print("prepend_page",self.first_page,  #self.pages, self.first_page:count())
+      local next_page_id = self.next_page_id or 0
+      self.next_page_id = next_page_id + 1
+      local newpage = Page(self.id, next_page_id, self.data_handlers, "active")
+      table.insert(self.pages, 1, newpage)
+      --previously first page (self.pages[2]) should remain active, it might get consumed pretty soon
+      local thirdpage = self.pages[3]
+      if thirdpage and thirdpage ~= self.last_page and thirdpage.state ~= "stored" then
+        thirdpage:change_state("idle")
+        thirdpage:change_state("stored")
+      end
+      self.first_page = newpage
+      return self
     end,
     
     next_page = function(self)
@@ -328,6 +387,7 @@ local PageQueue; do
         store_item = assert(opt.store_item, "store_item missing"),
         store_page = assert(opt.store_page, "store_page missing"),
         load_page =  assert(opt.load_page,  "load_page missing"),
+        stored_page_size =  assert(opt.stored_page_size,  "stored_page_size missing"),
         item_tostring = opt.item_tostring or tostring
       }
     }
