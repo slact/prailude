@@ -187,10 +187,10 @@ function Nanonet.bootstrap()
       log:debug("bootstrap: importing %i blocks... this should take a few minutes...", need_to_import)
       local imported = 0
       local ti0 = gettime()
-      Block.import_unverified_bootstrap_blocks(function(n, t)
+      Block.import_unverified_bootstrap_blocks(function(n, t, timestamp)
         --progress handler
         imported = imported + n
-        log:debug("bootstrap: imported %i of %i blocks [%3.2f%%], (%iblocks/sec)", imported, need_to_import, (imported/need_to_import)*100, n/(t))
+        log:debug("bootstrap: t: %.0f imported %i of %i blocks [%3.2f%%], (%.0fblocks/sec)", timestamp or 0, imported, need_to_import, (imported/need_to_import)*100, n/(t))
       end)
       log:debug("bootstrap: imported %i blocks in %s", need_to_import, tdiff(ti0, gettime()))
       --Block.clear_bootstrap()
@@ -223,7 +223,7 @@ function Nanonet.bootstrap()
     end
     
     local t3 = os.time()
-    log:debug("Bootstrap took %imin %isec", math.floor((t3-t0)/60), (t3-t0)%60)
+    log:debug("Bootstrap took %s", tdiff(t3-t0))
     
   end)
   return coroutine.resume(coro)
