@@ -2,6 +2,7 @@ local Block
 local sqlite3 = require "lsqlite3"
 local mm = require "mm"
 local Util = require "prailude.util"
+local coroutine = require "prailude.util.coroutine"
 
 local function indices(what, tbl_name)
   local _, tbl = tbl_name:match("^(.+%.)(.+)")
@@ -129,14 +130,19 @@ local BlockDB_meta = {__index = {
     stmt:bind(3, assert(self.signature, "block signature missing"))
     
     local valid = assert(self.valid, "block valid state missing")
-    stmt:bind(4, valid_code(valid))
+    if type(valid) == "number" then
+      assert(valid >=0 and valid <=4, "unexpected raw block-valid value")
+      stmt:bind(4, valid)
+    else
+      stmt:bind(4, valid_code(valid))
+    end
     
     stmt:bind(5, assert(self.type, "block type missing")) --TODO: use typecode for packing efficiency
     stmt:bind(6, self.previous)
     stmt:bind(7, self.source)
     stmt:bind(8, self.representative)
     stmt:bind(9, self.destination)
-    stmt:bind(10, self.balance and self.balance:pack() or nil)
+    stmt:bind(10, type(self.balance)=="userdata" and self.balance:pack() or self.balance)
     stmt:bind(11, self.work)
     stmt:bind(12, self.timestamp)
     stmt:bind(13, self.genesis_distance)
@@ -189,24 +195,43 @@ local BlockDB_meta = {__index = {
       print("drop block index during import")
       assert(db:exec(indices("drop", "blocks")) == sqlite3.OK, db:errmsg())
     end
-    local n = 1000000
+    local batch_size = 5000
     local t0 = gettime()
-    if progress_callback then
-      db:progress_handler(n, function()
-        local t1 = gettime()
-        progress_callback(n, t1 - t0)
-        t0 = t1
-        return false
-      end)
+    
+    local Block_store = Block.store
+    local function commit_batch(batch)
+      assert(db:exec("BEGIN EXCLUSIVE TRANSACTION") == sqlite3.OK, db:errmsg())
+      for _, block in ipairs(batch) do
+        Block_store(block)
+      end
+      assert(db:exec("COMMIT TRANSACTION") == sqlite3.OK, db:errmsg())
     end
-    assert(db:exec("INSERT OR IGNORE INTO blocks SELECT * FROM disktmp.blocks;") == sqlite3.OK, db:errmsg())
+    
+    local coro = coroutine.create(function()
+      local batch = {}
+      local tinsert = table.insert
+      for row in db:nrows("SELECT * FROM disktmp.blocks;") do
+        tinsert(batch, row)
+        if #batch >= batch_size then
+          local n = #batch
+          commit_batch(batch)
+          local t1 = gettime()
+          progress_callback(n, t1 - t0, t1)
+          t0 = gettime()
+          batch = {}
+        end
+      end
+    end)
+    
+    while coroutine.status(coro) == "suspended" do
+      coroutine.resume(coro)
+    end
+    
     if reindex then
+      print("drop block index during import")
       assert(db:exec(indices("create", "blocks")) == sqlite3.OK, db:errmsg())
     end
-    if progress_callback then
-      db:progress_handler(nil, nil)
-    end
-    return db:changes()
+    return true
   end,
   
   get_child_hashes = function(block)
