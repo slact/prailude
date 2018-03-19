@@ -10,7 +10,8 @@ local msg_types = {
   confirm_ack =   5,
   bulk_pull =     6,
   bulk_push =     7,
-  frontier_req =  8
+  frontier_req =  8,
+  bulk_pull_blocks = 9,
 }
 
 --instance metatable

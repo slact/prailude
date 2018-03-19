@@ -8,7 +8,7 @@ local cfg = {
   },
   bootstrap = {
     min_frontier_size = 430000,
-    max_peers = 150,
+    max_peers = 50,
     
   }
 }
