@@ -191,7 +191,7 @@ function Nanonet.bootstrap()
       Block.import_unverified_bootstrap_blocks(function(n, t, timestamp)
         --progress handler
         imported = imported + n
-        log:debug("bootstrap: t: %.0f imported %i of %i blocks [%3.2f%%], (%.0fblocks/sec)", timestamp or 0, imported, need_to_import, (imported/need_to_import)*100, n/(t))
+        log:debug("bootstrap: t: %.3f imported %i of %i blocks [%3.2f%%], (%.0fblocks/sec)", timestamp or 0, imported, need_to_import, (imported/need_to_import)*100, n/(t))
       end)
       log:debug("bootstrap: imported %i blocks in %s", need_to_import, tdiff(ti0, gettime()))
       --Block.clear_bootstrap()
