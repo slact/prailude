@@ -19,7 +19,8 @@ local coroutine = require "prailude.util.coroutine"
 local Nanonet = {}
 
 local tdiff = function(t0, t1)
-  return ("%im%is"):format(math.floor((t1-t0)/60), (t1-t0)%60)
+  local diff = t1-t0
+  return ("%.0fm%.0fs"):format(math.floor(diff/60), diff % 60)
 end
 
 local function keepalive()
@@ -138,7 +139,7 @@ function Nanonet.bootstrap()
     maybe_interrupt = function()
       --print("TRY interrupt", n)
       n = n+1
-      if n>30000 then
+      if n>20 then
         n=0
         if clock() - tw0 > 0.5 then
           Timer.delay(10)
@@ -151,7 +152,7 @@ function Nanonet.bootstrap()
   local coro = coroutine.create(function()
     --let's gather some peers first. 50 active peers should be enough
     
-    local fetch, import, verify = false, false, true
+    local fetch, import, verify = false, true, false
     
     if fetch then
       log:debug("bootstrap: preparing database...")
@@ -299,7 +300,7 @@ function Nanonet.bulk_pull_accounts()
           local blocks_fetched = blocks_so_far_count - prev_blocks
           prev_blocks = blocks_so_far_count
           if blocks_fetched < min_speed then -- too slow
-            if slow_in_a_row > 0 then
+            if slow_in_a_row > 2 then
               retry[acct_frontier]=true
               return false, "account pull too slow"
             else
