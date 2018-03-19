@@ -50,9 +50,9 @@ local Peer_instance = {
     return self
   end,
   
-  update_keepalive_ping = function(self, keepalive_received_time)
+  update_keepalive = function(self, keepalive, keepalive_received_time)
     keepalive_received_time = keepalive_received_time or gettime()
-    return Peer.update_keepalive_ping(self, keepalive_received_time)
+    return Peer.update_keepalive(self, keepalive, keepalive_received_time)
   end,
   
 }

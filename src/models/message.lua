@@ -20,9 +20,9 @@ local Message_metatable = {
   
     --default headers
     net = "main",
-    version_max = 5,
+    version_max = 7,
     version_min = 1,
-    version_cur = 4,
+    version_cur = 6,
     extensions = 0,
     type = "invalid",
   

@@ -57,7 +57,7 @@ local function keepalive()
     if not ok then
       return log:warn("nanonet: message:receive:keepalive failed from peer %s: %s", peer, msg)
     end
-    peer:update_keepalive_ping()
+    peer:update_keepalive(msg)
     if Peer.get_active_count() < config.node.max_peers then
       local inpeer
       local now = os.time()
