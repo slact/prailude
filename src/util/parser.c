@@ -112,10 +112,10 @@ static void lua_rawsetfield_number(lua_State *L, int tindex, const char *field, 
   lua_rawset(L, tindex);
 }
 
-typedef size_t (*block_unpack_fn)(rai_block_type_t, lua_State *, const char *, size_t , const char **);
-static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err);
-static size_t block_decode_raw(rai_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err);
-static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *buf, size_t buflen);
+typedef size_t (*block_unpack_fn)(nano_block_type_t, lua_State *, const char *, size_t , const char **);
+static size_t block_decode_unpack(nano_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err);
+static size_t block_decode_raw(nano_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err);
+static size_t block_pack_encode(nano_block_type_t blocktype, lua_State *L, char *buf, size_t buflen);
   
 static size_t lua_rawsetfield_string_scanbuf(lua_State *L, int tindex, const char *field, const char *buf, size_t buflen) {
   lua_rawsetfield_string(L, tindex, field, buf, buflen);
@@ -143,7 +143,7 @@ static size_t lua_table_field_fixedsize_string_encode(lua_State *L, int tblindex
   return expected_strlen;
 }
 
-static size_t message_header_pack(lua_State *L, int message_table_index, rai_msg_header_t *header, const char **err) {
+static size_t message_header_pack(lua_State *L, int message_table_index, nano_msg_header_t *header, const char **err) {
   const char       *str;
   int               isnum;
   lua_Number        num;
@@ -155,16 +155,16 @@ static size_t message_header_pack(lua_State *L, int message_table_index, rai_msg
   }
   switch(str[0]) { //yes, this assums strlen > 0
     case 't'://[t]estnet
-      header->net = RAI_TESTNET;
+      header->net = NANO_TESTNET;
       break;
     case 'b'://[b]etanet
-      header->net = RAI_BETANET;
+      header->net = NANO_BETANET;
       break;
     case 'm'://[m]ainnet
-      header->net = RAI_MAINNET;
+      header->net = NANO_MAINNET;
       break;
     default:
-      *err = "unexpected raiblocks network (not test/beta/main)";
+      *err = "unexpected Nano network (not test/beta/main)";
       return 0;
   }
   lua_pop(L, 1);
@@ -215,16 +215,16 @@ static size_t message_header_pack(lua_State *L, int message_table_index, rai_msg
   return 8;
 }
 
-static size_t message_header_unpack(lua_State *L, int message_table_index, rai_msg_header_t *hdr, const char **err) {
+static size_t message_header_unpack(lua_State *L, int message_table_index, nano_msg_header_t *hdr, const char **err) {
   
   switch(hdr->net) {
-    case RAI_TESTNET:
+    case NANO_TESTNET:
       lua_rawsetfield_string(L, message_table_index, "net", "test", 4);
       break;
-    case RAI_BETANET:
+    case NANO_BETANET:
       lua_rawsetfield_string(L, message_table_index, "net", "beta", 4);
       break;
-    case RAI_MAINNET:
+    case NANO_MAINNET:
       lua_rawsetfield_string(L, message_table_index, "net", "main", 4);
       break;
   }
@@ -234,31 +234,31 @@ static size_t message_header_unpack(lua_State *L, int message_table_index, rai_m
   lua_rawsetfield_number(L, message_table_index, "version_min", hdr->version_min);
   
   switch(hdr->msg_type) {
-    case RAI_MSG_INVALID:
+    case NANO_MSG_INVALID:
       lua_rawsetfield_literal(L, message_table_index, "type", "invalid");
       break;
-    case RAI_MSG_NO_TYPE:
+    case NANO_MSG_NO_TYPE:
       lua_rawsetfield_literal(L, message_table_index, "type", "no_type");
       break;
-    case RAI_MSG_KEEPALIVE:
+    case NANO_MSG_KEEPALIVE:
       lua_rawsetfield_literal(L, message_table_index, "type", "keepalive");
       break;
-    case RAI_MSG_PUBLISH:
+    case NANO_MSG_PUBLISH:
       lua_rawsetfield_literal(L, message_table_index, "type", "publish");
       break;
-    case RAI_MSG_CONFIRM_REQ:
+    case NANO_MSG_CONFIRM_REQ:
       lua_rawsetfield_literal(L, message_table_index, "type", "confirm_req");
       break;
-    case RAI_MSG_CONFIRM_ACK:
+    case NANO_MSG_CONFIRM_ACK:
       lua_rawsetfield_literal(L, message_table_index, "type", "confirm_ack");
       break;
-    case RAI_MSG_BULK_PULL:
+    case NANO_MSG_BULK_PULL:
       lua_rawsetfield_literal(L, message_table_index, "type", "bulk_pull");
       break;
-    case RAI_MSG_BULK_PUSH:
+    case NANO_MSG_BULK_PUSH:
       lua_rawsetfield_literal(L, message_table_index, "type", "bulk_push");
       break;
-    case RAI_MSG_FRONTIER_REQ:
+    case NANO_MSG_FRONTIER_REQ:
       lua_rawsetfield_literal(L, message_table_index, "type", "frontier_req");
       break;
   }
@@ -266,22 +266,22 @@ static size_t message_header_unpack(lua_State *L, int message_table_index, rai_m
   lua_rawsetfield_number(L, message_table_index, "extensions", hdr->extensions);
   
   switch(hdr->block_type) {
-    case RAI_BLOCK_INVALID:
+    case NANO_BLOCK_INVALID:
       lua_rawsetfield_string(L, message_table_index, "block_type", "invalid", 7);
       break;
-    case RAI_BLOCK_NOT_A_BLOCK:
+    case NANO_BLOCK_NOT_A_BLOCK:
       lua_rawsetfield_string(L, message_table_index, "block_type", "not_a_block", 11);
       break;
-    case RAI_BLOCK_SEND:
+    case NANO_BLOCK_SEND:
       lua_rawsetfield_string(L, message_table_index, "block_type", "send", 4);
       break;
-    case RAI_BLOCK_RECEIVE:
+    case NANO_BLOCK_RECEIVE:
       lua_rawsetfield_string(L, message_table_index, "block_type", "receive", 7);
       break;
-    case RAI_BLOCK_OPEN:
+    case NANO_BLOCK_OPEN:
       lua_rawsetfield_string(L, message_table_index, "block_type", "open", 4);
       break;
-    case RAI_BLOCK_CHANGE:
+    case NANO_BLOCK_CHANGE:
       lua_rawsetfield_string(L, message_table_index, "block_type", "change", 6);
       break;
   }
@@ -289,7 +289,7 @@ static size_t message_header_unpack(lua_State *L, int message_table_index, rai_m
   return 8;
 }
 
-static size_t message_header_encode(rai_msg_header_t *hdr, char *buf, const char **err) {
+static size_t message_header_encode(nano_msg_header_t *hdr, char *buf, const char **err) {
   *buf++ ='R';
   *buf++ ='A' + hdr->net;
   
@@ -304,7 +304,7 @@ static size_t message_header_encode(rai_msg_header_t *hdr, char *buf, const char
   return 8;
 }
 
-static size_t message_header_decode(rai_msg_header_t *hdr, const char *buf, size_t buflen, const char **errstr) {
+static size_t message_header_decode(nano_msg_header_t *hdr, const char *buf, size_t buflen, const char **errstr) {
   if(buflen < 8) {
     return 0; //not enough header bytes
   }
@@ -325,13 +325,13 @@ static size_t message_header_decode(rai_msg_header_t *hdr, const char *buf, size
   hdr->version_cur = (uint8_t )buf[3];
   hdr->version_min = (uint8_t )buf[4];
   
-  hdr->msg_type = (rai_msg_type_t )buf[5];
+  hdr->msg_type = (nano_msg_type_t )buf[5];
   hdr->extensions = (uint8_t )buf[6];
-  hdr->block_type = (rai_block_type_t )buf[7];
+  hdr->block_type = (nano_block_type_t )buf[7];
   
   return 8;
 }
-static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, const char *buf, size_t buflen, int unpack_block, const char **errstr) {
+static size_t message_body_decode_unpack(lua_State *L, nano_msg_header_t *hdr, const char *buf, size_t buflen, int unpack_block, const char **errstr) {
   // expects target message table to be at top of stack
   int          i, j;
   
@@ -345,12 +345,12 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
   block_unpack_fn block_decoder = unpack_block ? block_decode_unpack : block_decode_raw;
   
   switch(hdr->msg_type) {
-    case RAI_MSG_INVALID:
-    case RAI_MSG_NO_TYPE:
+    case NANO_MSG_INVALID:
+    case NANO_MSG_NO_TYPE:
       //these are invalid
       *errstr = "Invalid message type (invalid or no_type)";
       return 0;
-    case RAI_MSG_KEEPALIVE:
+    case NANO_MSG_KEEPALIVE:
       if(buflen < 144) {
         raise(SIGSTOP);
         return 0;
@@ -385,8 +385,8 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       }
       lua_rawset(L, -3);
       break;
-    case RAI_MSG_PUBLISH:
-    case RAI_MSG_CONFIRM_REQ:
+    case NANO_MSG_PUBLISH:
+    case NANO_MSG_CONFIRM_REQ:
       lua_pushliteral(L, "block");
       parsed = block_decoder(hdr->block_type, L, buf, buflen, errstr); //pushes block onto stack
       if(parsed == 0) { // need more bytes probably, or maybe there wasa parsing error
@@ -396,7 +396,7 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       lua_rawset(L, -3);
       buf+= parsed;
       break;
-    case  RAI_MSG_CONFIRM_ACK:
+    case  NANO_MSG_CONFIRM_ACK:
       if(buflen < 96) {
         raise(SIGSTOP);
         return 0;
@@ -417,17 +417,17 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       lua_rawset(L, -3);
       buf += parsed;
       break;
-    case RAI_MSG_BULK_PULL:
+    case NANO_MSG_BULK_PULL:
       if(buflen < 64) {raise(SIGSTOP); return 0;}
       lua_rawsetfield_string(L, -1, "account", buf, 32); //start_account
       buf+=32;
       lua_rawsetfield_string(L, -1, "frontier", buf, 32); //end_block
       buf+=32;
       break;
-    case RAI_MSG_BULK_PUSH:
+    case NANO_MSG_BULK_PUSH:
       //nothing to do, this is an empty message (the data follows the message)
       break;
-    case RAI_MSG_FRONTIER_REQ:
+    case NANO_MSG_FRONTIER_REQ:
       if(buflen < 40) { raise(SIGSTOP); return 0;}
       lua_rawsetfield_string(L, -1, "account", buf, 32); //start_account
       buf+=32;
@@ -440,11 +440,14 @@ static size_t message_body_decode_unpack(lua_State *L, rai_msg_header_t *hdr, co
       lua_rawsetfield_number(L, -1, "frontier_count", num);
       buf+=4;
       break;
+    case NANO_MSG_BULK_PULL_BLOCKS:
+      luaL_error(L, "BULK_PUSH_BLOCKS not supported yet");
+      break;
   }
   return buf - buf_start;
 }
 
-static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char *buf, size_t buflen, const char **err) {
+static size_t message_body_pack_encode(lua_State *L, nano_msg_header_t *hdr, char *buf, size_t buflen, const char **err) {
   int          i;
   const char  *peer_addr;
   uint16_t     peer_port;
@@ -452,12 +455,12 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
   size_t       written;
   uint32_t     num;
   switch(hdr->msg_type) {
-    case RAI_MSG_INVALID:
-    case RAI_MSG_NO_TYPE:
+    case NANO_MSG_INVALID:
+    case NANO_MSG_NO_TYPE:
       //these are invalid
       *err = "Invalid message type (invalid or no_type)";
       return 0;
-    case RAI_MSG_KEEPALIVE:
+    case NANO_MSG_KEEPALIVE:
       if(buflen < 144){
         *err = "not enough space to write keepalive message";
         return 0;
@@ -496,8 +499,8 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
       }
       lua_pop(L, 1);
       break;
-    case RAI_MSG_PUBLISH:
-    case RAI_MSG_CONFIRM_REQ:
+    case NANO_MSG_PUBLISH:
+    case NANO_MSG_CONFIRM_REQ:
       lua_rawgetfield(L, -1, "block");
       if(!lua_istable(L, -1)) {
         *err = "expected a 'block' table in 'publish' or 'confirm_req' message";
@@ -510,7 +513,7 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
       }
       lua_pop(L, 1);
       break;
-    case  RAI_MSG_CONFIRM_ACK:
+    case  NANO_MSG_CONFIRM_ACK:
       if(buflen < 96) {
         *err = "not enough space to write 'confirm_ack' message";
         return 0;
@@ -526,7 +529,7 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
       }
       buf += written;
       break;
-    case RAI_MSG_BULK_PULL:
+    case NANO_MSG_BULK_PULL:
       if(buflen < 64) {
         *err = "not enough space to write 'bulk_pull' message";
         return 0;
@@ -543,10 +546,10 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
         buf += lua_table_field_fixedsize_string_encode(L, -1, "frontier",        buf, 32); //end block hash
       }
       break;
-    case RAI_MSG_BULK_PUSH:
+    case NANO_MSG_BULK_PUSH:
       //nothing to do, this is an empty message (the data follows the message)
       break;
-    case RAI_MSG_FRONTIER_REQ:
+    case NANO_MSG_FRONTIER_REQ:
       if(buflen < 40) {
         *err = "not enough space to write 'frontier_req' message";
         return 0;
@@ -594,18 +597,18 @@ static size_t message_body_pack_encode(lua_State *L, rai_msg_header_t *hdr, char
   return buf - buf_start;
 }
 
-static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *buf, size_t buflen) {
+static size_t block_pack_encode(nano_block_type_t blocktype, lua_State *L, char *buf, size_t buflen) {
   //expects the block table to be at top of the stack
   char          *buf_start = buf;
   const char    *str;
   size_t         sz;
   
   switch(blocktype) {
-    case RAI_BLOCK_INVALID:
-    case RAI_BLOCK_NOT_A_BLOCK:
+    case NANO_BLOCK_INVALID:
+    case NANO_BLOCK_NOT_A_BLOCK:
       luaL_error(L, "tried to pack & encode invalid or not-a-block blocktype");
       return 0;
-    case RAI_BLOCK_SEND:
+    case NANO_BLOCK_SEND:
       if(buflen < 152)
         luaL_error(L, "buflen too small to encode 'send' block");
       buf += lua_table_field_fixedsize_string_encode(L, -1, "previous",     buf, 32);
@@ -633,7 +636,7 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",    buf, 64);
       buf += lua_table_field_fixedsize_string_encode(L, -1, "work",         buf, 8);
       break;
-    case RAI_BLOCK_RECEIVE:
+    case NANO_BLOCK_RECEIVE:
       if(buflen < 136)
         luaL_error(L, "buflen too small to encode 'receive' block");
       buf += lua_table_field_fixedsize_string_encode(L, -1, "previous",     buf, 32);
@@ -641,7 +644,7 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",    buf, 64);
       buf += lua_table_field_fixedsize_string_encode(L, -1, "work",         buf, 8);
       break;
-    case RAI_BLOCK_OPEN:
+    case NANO_BLOCK_OPEN:
       if(buflen < 168)
         luaL_error(L, "buflen too small to encode 'open' block");
       buf += lua_table_field_fixedsize_string_encode(L, -1, "source",       buf, 32); //source block of first 'send' block
@@ -650,7 +653,7 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
       buf += lua_table_field_fixedsize_string_encode(L, -1, "signature",     buf, 64);
       buf += lua_table_field_fixedsize_string_encode(L, -1, "work",          buf, 8);
       break;
-    case RAI_BLOCK_CHANGE:
+    case NANO_BLOCK_CHANGE:
       if(buflen < 136) 
         luaL_error(L, "buflen too small to encode 'change' block");
       buf += lua_table_field_fixedsize_string_encode(L, -1, "previous",     buf, 32);
@@ -662,30 +665,30 @@ static size_t block_pack_encode(rai_block_type_t blocktype, lua_State *L, char *
   return buf - buf_start;
 }
 
-#define RAI_BLOCK_SEND_SZ     152
-#define RAI_BLOCK_RECEIVE_SZ  136
-#define RAI_BLOCK_OPEN_SZ     168
-#define RAI_BLOCK_CHANGE_SZ   136
+#define NANO_BLOCK_SEND_SZ     152
+#define NANO_BLOCK_RECEIVE_SZ  136
+#define NANO_BLOCK_OPEN_SZ     168
+#define NANO_BLOCK_CHANGE_SZ   136
 
-static size_t block_decode_raw(rai_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err) {
+static size_t block_decode_raw(nano_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err) {
   size_t sz;
   switch(blocktype) {
-    case RAI_BLOCK_SEND:
-      sz = RAI_BLOCK_SEND_SZ;
+    case NANO_BLOCK_SEND:
+      sz = NANO_BLOCK_SEND_SZ;
       break;
-    case RAI_BLOCK_RECEIVE:
-      sz = RAI_BLOCK_RECEIVE_SZ;
+    case NANO_BLOCK_RECEIVE:
+      sz = NANO_BLOCK_RECEIVE_SZ;
       break;
-    case RAI_BLOCK_OPEN:
-      sz = RAI_BLOCK_OPEN_SZ;
+    case NANO_BLOCK_OPEN:
+      sz = NANO_BLOCK_OPEN_SZ;
       break;
-    case RAI_BLOCK_CHANGE:
-      sz = RAI_BLOCK_CHANGE_SZ;
+    case NANO_BLOCK_CHANGE:
+      sz = NANO_BLOCK_CHANGE_SZ;
       break;
-    case RAI_BLOCK_INVALID:
+    case NANO_BLOCK_INVALID:
       *err = "tried to unpack 'invalid' type block";
       return 0;
-    case RAI_BLOCK_NOT_A_BLOCK:
+    case NANO_BLOCK_NOT_A_BLOCK:
       *err = "tried to unpack 'not_a_block' type block";
       return 0;
     default:
@@ -702,11 +705,11 @@ static size_t block_decode_raw(rai_block_type_t blocktype, lua_State *L, const c
 
 //read in *buf, leaves a table with the unpacked block on top of the stack
 //return bytes read, 0 if not enough bytes available to read block
-static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err) {
+static size_t block_decode_unpack(nano_block_type_t blocktype, lua_State *L, const char *buf, size_t buflen, const char **err) {
   const char      *buf_start = buf;
   switch(blocktype) {
-    case RAI_BLOCK_SEND:
-      if(buflen < RAI_BLOCK_SEND_SZ) {
+    case NANO_BLOCK_SEND:
+      if(buflen < NANO_BLOCK_SEND_SZ) {
         return 0; //need moar bytes
       }
       lua_createtable(L, 0, 7);
@@ -717,8 +720,8 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8); // is this right?...
       break;
-    case RAI_BLOCK_RECEIVE:
-      if(buflen < RAI_BLOCK_RECEIVE_SZ) {
+    case NANO_BLOCK_RECEIVE:
+      if(buflen < NANO_BLOCK_RECEIVE_SZ) {
         return 0; //moar bytes plz
       }
       lua_createtable(L, 0, 6);
@@ -728,8 +731,8 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8);
       break;
-    case RAI_BLOCK_OPEN:
-      if(buflen < RAI_BLOCK_OPEN_SZ) {
+    case NANO_BLOCK_OPEN:
+      if(buflen < NANO_BLOCK_OPEN_SZ) {
         return 0; //gib byts nao
       }
       lua_createtable(L, 0, 6);
@@ -740,8 +743,8 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8);
       break;
-    case RAI_BLOCK_CHANGE:
-      if(buflen < RAI_BLOCK_CHANGE_SZ) {
+    case NANO_BLOCK_CHANGE:
+      if(buflen < NANO_BLOCK_CHANGE_SZ) {
         return 0; //such bytes, not enough wow
       }
       lua_createtable(L, 0, 6);
@@ -751,10 +754,10 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
       buf += lua_rawsetfield_string_scanbuf(L, -1, "signature",    buf, 64);
       buf += lua_rawsetfield_string_scanbuf(L, -1, "work",         buf, 8);
       break;
-    case RAI_BLOCK_INVALID:
+    case NANO_BLOCK_INVALID:
       *err = "tried to unpack 'invalid' type block";
       return 0;
-    case RAI_BLOCK_NOT_A_BLOCK:
+    case NANO_BLOCK_NOT_A_BLOCK:
       *err = "tried to unpack 'not_a_block' type block";
       return 0;
     default:
@@ -767,7 +770,7 @@ static size_t block_decode_unpack(rai_block_type_t blocktype, lua_State *L, cons
 }
 
 static int prailude_pack_message(lua_State *L) {
-  rai_msg_header_t  header;
+  nano_msg_header_t header;
   char              msg[512];
   char             *cur = msg;
   size_t            lastsz;
@@ -806,7 +809,7 @@ static int prailude_unpack_message(lua_State *L) {
   const char         *packed_msg;
   const char         *cur;
   size_t              msg_sz;
-  rai_msg_header_t    header;
+  nano_msg_header_t   header;
   const char         *err = NULL;
   int                 unpack_block;
   luaL_argcheck(L, lua_gettop(L) == 2, 0, "incorrect number of arguments: must have the packed message and if block should be unpacked");
@@ -949,25 +952,25 @@ static int prailude_pack_frontiers(lua_State *L) {
 }
 
 static int prailude_unpack_bulk(lua_State *L) {
-  size_t           sz, bytes_read = 0;
-  const char      *buf = luaL_checklstring(L, 1, &sz);
-  const char      *end = &buf[sz];
-  const char      *cur = buf;
-  const char      *err = NULL;
-  int              n = 0, done = 0;
-  rai_block_type_t blocktype;
+  size_t            sz, bytes_read = 0;
+  const char       *buf = luaL_checklstring(L, 1, &sz);
+  const char       *end = &buf[sz];
+  const char       *cur = buf;
+  const char       *err = NULL;
+  int               n = 0, done = 0;
+  nano_block_type_t blocktype;
   
   lua_newtable(L);
   
   while(cur < end) {
-    blocktype = (rai_block_type_t )*cur;
+    blocktype = (nano_block_type_t )*cur;
     cur++;
-    if(blocktype == RAI_BLOCK_INVALID) {
+    if(blocktype == NANO_BLOCK_INVALID) {
       lua_pushnil(L);
       lua_pushstring(L, "unexpected block type 0 (INVALID) in bulk pull");
       return 2;
     }
-    else if(blocktype == RAI_BLOCK_NOT_A_BLOCK) {
+    else if(blocktype == NANO_BLOCK_NOT_A_BLOCK) {
       done = 1;
       break;
     }
@@ -1019,7 +1022,7 @@ static int prailude_pack_bulk(lua_State *L) {
 static int prailude_pack_block(lua_State *L) {
   char               buf[512];
   size_t             len;
-  rai_block_type_t   blocktype;
+  nano_block_type_t  blocktype;
   luaL_checktype(L, 1, LUA_TTABLE);
   lua_getfield(L, 1, "typecode");
   lua_pushvalue(L, 1); 
@@ -1040,7 +1043,7 @@ static int prailude_unpack_block(lua_State *L) {
   size_t               sz;
   size_t               bytes_read;
   const char          *err = NULL;
-  rai_block_type_t     blocktype;
+  nano_block_type_t    blocktype;
   blocktype = luaL_checkinteger(L, 1);
   if(blocktype < 2 || blocktype > 5) {
     luaL_error(L, "invalid block type code %i", blocktype);

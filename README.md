@@ -1,4 +1,4 @@
-Prailude, a full RaiBlocks node and wallet
+Prailude, a full Nano Currency node and wallet
 ------------------------
 
 ## Overview

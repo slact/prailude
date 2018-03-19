@@ -256,7 +256,7 @@ int inet_pton6(const char *src, unsigned char *dst) {
 #define IS_BIG_ENDIAN (*(uint16_t *)"\0\xff" < 0x100)
 //rai is little-endian in its packets
 
-uint32_t htorainl(uint32_t hostlong) {
+uint32_t htonanonl(uint32_t hostlong) {
   if(IS_BIG_ENDIAN) {
     uint32_t out = 
   }
@@ -264,7 +264,7 @@ uint32_t htorainl(uint32_t hostlong) {
     return hostlong;
   }
 }
-uint16_t htorains(uint16_t hostshort);
-uint32_t ntoraihl(uint32_t netlong);
-uint16_t ntoraihs(uint16_t netshort);
+uint16_t htonanons(uint16_t hostshort);
+uint32_t ntonanohl(uint32_t netlong);
+uint16_t ntonanohs(uint16_t netshort);
 */

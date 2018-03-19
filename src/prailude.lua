@@ -5,7 +5,7 @@ local Prailude = {
   server =      require "prailude.server",
   bus =         require "prailude.bus",
   control =     require "prailude.control",
-  rainet =      require "prailude.rainet",
+  nanonet =     require "prailude.nanonet",
   -- instantiatable objects
   peer =        require "prailude.peer",
   message =     require "prailude.message",

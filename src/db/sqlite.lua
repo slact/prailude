@@ -73,7 +73,7 @@ end
 
 function DB.initialize()
   --opt = opt or {}
-  local db = DB.open("raiblocks", {
+  local db = DB.open("nano", {
     pragma = {
       synchronous = false, --don't really care if the db lags behind on crash
       journal_mode = "TRUNCATE",

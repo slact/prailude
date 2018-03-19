@@ -16,7 +16,7 @@ local uv = require "luv"
 local mm = require "mm"
 local coroutine = require "prailude.util.coroutine"
 --local bytes_to_hex = require "prailude.util".bytes_to_hex
-local Rainet = {}
+local Nanonet = {}
 
 local tdiff = function(t0, t1)
   return ("%im%is"):format(math.floor((t1-t0)/60), (t1-t0)%60)
@@ -55,7 +55,7 @@ local function keepalive()
   --keepalive parsing and response
   Bus.sub("message:receive:keepalive", function(ok, msg, peer)
     if not ok then
-      return log:warn("rainet: message:receive:keepalive failed from peer %s: %s", peer, msg)
+      return log:warn("nanonet: message:receive:keepalive failed from peer %s: %s", peer, msg)
     end
     peer:update_keepalive_ping()
     if Peer.get_active_count() < config.node.max_peers then
@@ -95,21 +95,21 @@ local function handle_blocks()
   end
   Bus.sub("message:receive:publish", function(ok, msg, peer)
     if not ok then
-      return log:warn("rainet: message:receive:publish from %s failed: %s", peer, msg)
+      return log:warn("nanonet: message:receive:publish from %s failed: %s", peer, msg)
     end
     local block = Block.unpack(msg.block_type, msg.block)
     check_block(block, peer)
   end)
   Bus.sub("message:receive:confirm_req", function(ok, msg, peer)
     if not ok then
-      return log:warn("rainet: message:receive:confirm_req from %s failed: %s", peer, msg)
+      return log:warn("nanonet: message:receive:confirm_req from %s failed: %s", peer, msg)
     end
     local block = Block.unpack(msg.block_type, msg.block)
     check_block(block, peer)
   end)
   Bus.sub("message:receive:confirm_ack", function(ok, msg, peer)
     if not ok then
-      return log:warn("rainet: message:receive:confirm_ack from %s failed: %s", peer, msg)
+      return log:warn("nanonet: message:receive:confirm_ack from %s failed: %s", peer, msg)
     end
     coroutine.wrap(function()
       local vote = Vote.new(msg)
@@ -123,13 +123,13 @@ local function handle_blocks()
   end)
 end
 
-function Rainet.initialize()
+function Nanonet.initialize()
   --local initial_peers = {}
   keepalive()
   handle_blocks()
 end
 
-function Rainet.bootstrap()
+function Nanonet.bootstrap()
   local gettime = require "prailude.util.lowlevel".gettime
   local maybe_interrupt; do
     local clock = os.clock
@@ -171,14 +171,14 @@ function Rainet.bootstrap()
     if fetch then
       t1 = gettime()
       log:debug("bootstrap: fetching frontiers... this should take a few minutes...")
-      Rainet.fetch_frontiers(3)
+      Nanonet.fetch_frontiers(3)
       t2=gettime()
       log:debug("bootstrap: frontiers fetched in %s. finding already synced frontiers...", tdiff(t1, t2))
       local already_synced = Frontier.delete_synced_frontiers()
       log:debug("bootstrap: finished in %s. need to sync %i frontiers (%i already synced)", tdiff(t2, gettime()), Frontier.get_size(), already_synced)
       t1 = gettime()
       log:debug("bootstrap: gathering blocks... this should take 20-50 minutes...")
-      Rainet.bulk_pull_accounts()
+      Nanonet.bulk_pull_accounts()
       print("bootstrap: finished gathering blocks in %s", tdiff(t1, gettime()))
     end
     
@@ -229,7 +229,7 @@ function Rainet.bootstrap()
   return coroutine.resume(coro)
 end
 
-function Rainet.bulk_pull_accounts()
+function Nanonet.bulk_pull_accounts()
   --print("now bulk_pull some accounts", #frontier)
   local min_speed = 3 --blocks/sec
   local active_peers = {}
@@ -358,7 +358,7 @@ function Rainet.bulk_pull_accounts()
   return ok, failed, errs
 end
 
-function Rainet.fetch_frontiers(min_good_frontier_requests)
+function Nanonet.fetch_frontiers(min_good_frontier_requests)
   local min_frontiers_per_sec = 200
   min_good_frontier_requests = min_good_frontier_requests or 3
   
@@ -473,4 +473,4 @@ function Rainet.fetch_frontiers(min_good_frontier_requests)
   return frontiers_set, failed, errs
 end
 
-return Rainet
+return Nanonet

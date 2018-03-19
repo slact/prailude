@@ -7,7 +7,7 @@ local bus = require "prailude.bus"
 local Control = {}
 local mm = require "mm"
 local log = require "prailude.log"-- "control"
-local Rainet = require "prailude.rainet"
+local Nanonet = require "prailude.nanonet"
 local Timer = require "prailude.util.timer"
 local DB = require "prailude.db"
 
@@ -20,7 +20,7 @@ function Control.initialize()
   end
   DB.initialize("sqlite")
   Server.initialize()
-  Rainet.initialize()
+  Nanonet.initialize()
   initialized = true
   return true
 end
@@ -64,7 +64,7 @@ function Control.run(runfunc)
   end)
   
   if runfunc == nil then
-    runfunc = Rainet.bootstrap
+    runfunc = Nanonet.bootstrap
   else
     if type(runfunc) == "function" then
       Timer.delay(1, runfunc)

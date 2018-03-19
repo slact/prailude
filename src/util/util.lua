@@ -502,11 +502,11 @@ util.blake2b = {
   hash = blake2b_hash,
 }
 util.work = {
-  verify = crypto.raiblocks_verify_work,
-  verify_test = crypto.raiblocks_verify_work,
-  generate = crypto.raiblocks_generate_work
+  verify = crypto.nano_verify_work,
+  verify_test = crypto.nano_verify_work,
+  generate = crypto.nano_generate_work
 }
-util.argon2d_hash = crypto.argon2d_raiblocks_hash
+util.argon2d_hash = crypto.argon2d_nano_hash
 util.ed25519 = {
   get_public_key = crypto.edDSA_blake2b_get_public_key,
   sign = crypto.edDSA_blake2b_sign,

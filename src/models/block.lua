@@ -1,5 +1,3 @@
---eh...
-
 local mainnet = true
 
 local Util = require "prailude.util"

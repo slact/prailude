@@ -8,7 +8,7 @@
 #include "util.h"
 #include "uint256.h"
 
-int raiutil_unpack_account_with_checksum(lua_State *L) {
+int nanoutil_unpack_account_with_checksum(lua_State *L) {
   static const char b32[] = "13456789abcdefghijkmnopqrstuwxyz";
   char           out[65];
   int            i;
@@ -52,7 +52,7 @@ int raiutil_unpack_account_with_checksum(lua_State *L) {
   lua_pushstring(L, errmsg); \
   return 2
 
-int raiutil_pack_account_with_checksum(lua_State *L) {
+int nanoutil_pack_account_with_checksum(lua_State *L) {
   static const char decode32[] =  "\x00\xFF\x01\x02\x03\x04\x05\x06"
                                   "\x07\xFF\xFF\xFF\xFF\xFF\xFF\xFF"
                                   "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"
@@ -110,7 +110,7 @@ int raiutil_pack_account_with_checksum(lua_State *L) {
   return 2;
 }
 
-static int raiutil_unpack_balance_raw(lua_State *L) {
+static int nanoutil_unpack_balance_raw(lua_State *L) {
   char        out[40];
   const char *in;
   uint128_t   balance;
@@ -128,7 +128,7 @@ static int raiutil_unpack_balance_raw(lua_State *L) {
   return 1;
 }
 
-static int raiutil_pack_balance_raw(lua_State *L) {
+static int nanoutil_pack_balance_raw(lua_State *L) {
   //not yet implemented
   return luaL_error(L, "not implemented");
 }
@@ -143,7 +143,7 @@ static void bin_to_strhex(const unsigned char *bin, size_t bin_len, unsigned cha
   out[bin_len * 2] = 0;
 }
 
-static int raiutil_print_hex(lua_State *L) {
+static int nanoutil_print_hex(lua_State *L) {
   const char   *in;
   size_t        sz;
   int           i;
@@ -160,7 +160,7 @@ static int raiutil_print_hex(lua_State *L) {
   return 0;
 }
 
-static int raiutil_to_hex(lua_State *L) {
+static int nanoutil_to_hex(lua_State *L) {
   char         *out;
   const char   *in;
   size_t        sz;
@@ -174,7 +174,7 @@ static int raiutil_to_hex(lua_State *L) {
   return 1;
 }
 
-static int raiutil_from_hex(lua_State *L) {
+static int nanoutil_from_hex(lua_State *L) {
   char         *out;
   const char   *in;
   size_t        len, i, j;
@@ -223,21 +223,21 @@ static double timeout_gettime(void) {
 }
 #endif
 
-static int raiutil_gettime(lua_State *L) {
+static int nanoutil_gettime(lua_State *L) {
   lua_pushnumber(L, timeout_gettime());
   return 1;
 }
 
 static const struct luaL_Reg prailude_util_functions[] = {
-  { "unpack_account_with_checksum", raiutil_unpack_account_with_checksum },
-  { "pack_account_with_checksum", raiutil_pack_account_with_checksum },
-  { "unpack_balance_raw", raiutil_unpack_balance_raw },
-  { "pack_balance_raw", raiutil_pack_balance_raw },
-  { "bytes_to_hex", raiutil_to_hex },
-  { "hex_to_bytes", raiutil_from_hex },
-  { "print_hex", raiutil_print_hex },
+  { "unpack_account_with_checksum", nanoutil_unpack_account_with_checksum },
+  { "pack_account_with_checksum", nanoutil_pack_account_with_checksum },
+  { "unpack_balance_raw", nanoutil_unpack_balance_raw },
+  { "pack_balance_raw", nanoutil_pack_balance_raw },
+  { "bytes_to_hex", nanoutil_to_hex },
+  { "hex_to_bytes", nanoutil_from_hex },
+  { "print_hex", nanoutil_print_hex },
   
-  { "gettime", raiutil_gettime },
+  { "gettime", nanoutil_gettime },
   
   { NULL, NULL }
 };

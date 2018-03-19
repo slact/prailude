@@ -7,7 +7,7 @@ source = {
   --tag="v".._version
 }
 description = {
-  summary = "RaiBlocks cryptocurrency node",
+  summary = "Nano cryptocurrency node",
   detailed = "To be detailed",
   homepage = "https://github.com/slact/prailude",
   license = "MIT"
@@ -82,7 +82,7 @@ build = {
     ["prailude.control"] =       "src/control.lua",
     ["prailude.config"] =        "src/config.lua",
     ["prailude.bus"] =           "src/bus.lua",
-    ["prailude.rainet"] =        "src/rainet.lua",
+    ["prailude.nanonet"] =        "src/nanonet.lua",
     ["prailude.log"] =           "src/log.lua",
     
     --pluggable db interface

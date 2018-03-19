@@ -126,7 +126,7 @@ static inline uint64_t xorshift64star(void) {
   return x * 0x2545F4914F6CDD1D;
 }
 
-static int raiblocks_internal_work_verify(const char *block_hashable, size_t hashable_len, const char *work, uint64_t threshold) {
+static int nano_internal_work_verify(const char *block_hashable, size_t hashable_len, const char *work, uint64_t threshold) {
   uint64_t            result;
   
   blake2b_state       state;
@@ -158,19 +158,19 @@ static int raiblocks_internal_work_verify(const char *block_hashable, size_t has
   return result >= threshold;
 }
 
-static int raiblocks_generate_proof_of_work(lua_State *L, uint64_t threshold) {
+static int nano_generate_proof_of_work(lua_State *L, uint64_t threshold) {
   size_t        hashable_len;
   uint64_t      pow;
   const char   *block_hashable = luaL_checklstring(L, 1, &hashable_len);
   do {
     pow = xorshift64star();
-  } while(!raiblocks_internal_work_verify(block_hashable, hashable_len, (const char *)&pow, threshold));
+  } while(!nano_internal_work_verify(block_hashable, hashable_len, (const char *)&pow, threshold));
   
   lua_pushlstring(L, (const char *)&pow, 8);
   return 1;
 }
 
-static int raiblocks_work_verify(lua_State *L, uint64_t threshold) {
+static int nano_work_verify(lua_State *L, uint64_t threshold) {
   size_t              len;
   const char         *work, *block_hashable;
   work = luaL_checklstring(L, 2, &len);
@@ -180,20 +180,20 @@ static int raiblocks_work_verify(lua_State *L, uint64_t threshold) {
   block_hashable = luaL_checklstring(L, 1, &len);
   
   
-  return raiblocks_internal_work_verify(block_hashable, len, work, threshold);
+  return nano_internal_work_verify(block_hashable, len, work, threshold);
 }
 
-static int lua_raiblocks_work_verify_test(lua_State *L) {
-  lua_pushboolean(L, raiblocks_work_verify(L, publish_test_threshold));
+static int lua_nano_work_verify_test(lua_State *L) {
+  lua_pushboolean(L, nano_work_verify(L, publish_test_threshold));
   return 1;
 }
-static int lua_raiblocks_work_verify_full(lua_State *L) {
-  lua_pushboolean(L, raiblocks_work_verify(L, publish_full_threshold));
+static int lua_nano_work_verify_full(lua_State *L) {
+  lua_pushboolean(L, nano_work_verify(L, publish_full_threshold));
   return 1;
 }
 
-static int lua_raiblocks_generate_proof_of_work_full(lua_State *L) {
-  raiblocks_generate_proof_of_work(L, publish_full_threshold);
+static int lua_nano_generate_proof_of_work_full(lua_State *L) {
+  nano_generate_proof_of_work(L, publish_full_threshold);
   return 1;
 }
 
@@ -371,7 +371,7 @@ static int lua_edDSA_blake2b_batch_verify(lua_State *L) { //batch_len, {{message
 #define kdf_full_work (64 * 1024)
 #define kdf_test_work 8
 
-static int lua_argon2d_raiblocks_hash(lua_State *L) {
+static int lua_argon2d_nano_hash(lua_State *L) {
   char        result[64];
   
   const char *password;
@@ -412,21 +412,21 @@ static int lua_argon2d_raiblocks_hash(lua_State *L) {
 //}
 
 static const struct luaL_Reg prailude_crypto_functions[] = {
-  { "blake2b_init", lua_blake2b_init },
-  { "blake2b_update", lua_blake2b_update },
-  { "blake2b_finalize", lua_blake2b_finalize },
-  { "blake2b_hash", lua_blake2b_hash }, //(input_str or table, hash_bytes = 32)
+  { "blake2b_init",                 lua_blake2b_init },
+  { "blake2b_update",               lua_blake2b_update },
+  { "blake2b_finalize",             lua_blake2b_finalize },
+  { "blake2b_hash",                 lua_blake2b_hash }, //(input_str or table, hash_bytes = 32)
   
-  { "raiblocks_verify_test_work", lua_raiblocks_work_verify_test },
-  { "raiblocks_verify_work", lua_raiblocks_work_verify_full },
-  { "raiblocks_generate_work", lua_raiblocks_generate_proof_of_work_full },
+  { "nano_verify_test_work",        lua_nano_work_verify_test },
+  { "nano_verify_work",             lua_nano_work_verify_full },
+  { "nano_generate_work",           lua_nano_generate_proof_of_work_full },
   
   { "edDSA_blake2b_get_public_key", lua_edDSA_blake2b_get_public_key },
   { "edDSA_blake2b_sign",           lua_edDSA_blake2b_sign },
   { "edDSA_blake2b_verify",         lua_edDSA_blake2b_verify },
   { "edDSA_blake2b_batch_verify",   lua_edDSA_blake2b_batch_verify },
   
-  {"argon2d_raiblocks_hash",        lua_argon2d_raiblocks_hash },
+  {"argon2d_nano_hash",             lua_argon2d_nano_hash },
   
   { NULL, NULL }
 };
