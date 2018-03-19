@@ -261,6 +261,9 @@ static size_t message_header_unpack(lua_State *L, int message_table_index, nano_
     case NANO_MSG_FRONTIER_REQ:
       lua_rawsetfield_literal(L, message_table_index, "type", "frontier_req");
       break;
+    case NANO_MSG_BULK_PULL_BLOCKS:
+      lua_rawsetfield_literal(L, message_table_index, "type", "bulk_pull_blocks");
+      break;
   }
   
   lua_rawsetfield_number(L, message_table_index, "extensions", hdr->extensions);
@@ -593,6 +596,10 @@ static size_t message_body_pack_encode(lua_State *L, nano_msg_header_t *hdr, cha
       buf+=4;
       
       break;
+    case NANO_MSG_BULK_PULL_BLOCKS:
+      //these are invalid
+      *err = "bulk_pull_blocks not supported yet";
+      return 0;
   }
   return buf - buf_start;
 }

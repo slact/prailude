@@ -8,6 +8,7 @@ typedef enum {
   NANO_MSG_BULK_PULL,    //6
   NANO_MSG_BULK_PUSH,    //7
   NANO_MSG_FRONTIER_REQ, //8
+  NANO_MSG_BULK_PULL_BLOCKS //9
 } nano_msg_type_t;
 
 typedef enum {
