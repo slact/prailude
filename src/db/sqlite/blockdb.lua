@@ -2,7 +2,6 @@ local Block
 local sqlite3 = require "lsqlite3"
 local mm = require "mm"
 local Util = require "prailude.util"
-local coroutine = require "prailude.util.coroutine"
 
 local function indices(what, tbl_name)
   local _, tbl = tbl_name:match("^(.+%.)(.+)")
@@ -185,7 +184,7 @@ local BlockDB_meta = {__index = {
     assert(db:exec("DELETE FROM disktmp.blocks") == sqlite3.OK, db:errmsg())
   end,
   
-  import_unverified_bootstrap_blocks = function(progress_callback)
+  import_unverified_bootstrap_blocks = function(interrupt_callback, progress_callback)
     local gettime = require "prailude.util.lowlevel".gettime
     local block_count, import_block_count = Block.count(), Block.count_bootstrapped()
     
@@ -200,35 +199,32 @@ local BlockDB_meta = {__index = {
     
     local Block_store = Block.store
     local function commit_batch(batch)
-      assert(db:exec("BEGIN EXCLUSIVE TRANSACTION") == sqlite3.OK, db:errmsg())
+      assert(db:exec("BEGIN TRANSACTION") == sqlite3.OK, db:errmsg())
       for _, block in ipairs(batch) do
         Block_store(block)
       end
       assert(db:exec("COMMIT TRANSACTION") == sqlite3.OK, db:errmsg())
     end
     
-    local coro = coroutine.create(function()
-      local batch = {}
-      local tinsert = table.insert
-      for row in db:nrows("SELECT * FROM disktmp.blocks;") do
-        tinsert(batch, row)
-        if #batch >= batch_size then
-          local n = #batch
-          commit_batch(batch)
-          local t1 = gettime()
-          progress_callback(n, t1 - t0, t1)
-          t0 = gettime()
-          batch = {}
-        end
+    local batch = {}
+    local tinsert = table.insert
+    for row in db:nrows("SELECT * FROM disktmp.blocks;") do
+      if interrupt_callback then
+        interrupt_callback()
       end
-    end)
-    
-    while coroutine.status(coro) == "suspended" do
-      coroutine.resume(coro)
+      tinsert(batch, row)
+      if #batch >= batch_size then
+        local n = #batch
+        commit_batch(batch)
+        local t1 = gettime()
+        progress_callback(n, t1 - t0, t1)
+        t0 = gettime()
+        batch = {}
+      end
     end
     
     if reindex then
-      print("drop block index during import")
+      print("recreate block index after import")
       assert(db:exec(indices("create", "blocks")) == sqlite3.OK, db:errmsg())
     end
     return true

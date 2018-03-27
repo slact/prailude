@@ -457,6 +457,7 @@ static size_t message_body_pack_encode(lua_State *L, nano_msg_header_t *hdr, cha
   char        *buf_start = buf;
   size_t       written;
   uint32_t     num;
+  const char  *str;
   switch(hdr->msg_type) {
     case NANO_MSG_INVALID:
     case NANO_MSG_NO_TYPE:
@@ -597,9 +598,41 @@ static size_t message_body_pack_encode(lua_State *L, nano_msg_header_t *hdr, cha
       
       break;
     case NANO_MSG_BULK_PULL_BLOCKS:
-      //these are invalid
-      *err = "bulk_pull_blocks not supported yet";
-      return 0;
+      if(buflen < 69) {
+        *err = "not enough space to write 'bulk_pull_blocks' message";
+        return 0;
+      }
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "min_hash", buf, 32);
+      buf += lua_table_field_fixedsize_string_encode(L, -1, "max_hash", buf, 32);
+      
+      lua_getfield(L, -1, "mode");
+      str = lua_tostring(L, -1);
+      if(!str) {
+        *err = "missing mode for 'bulk_pull_blocks' message";
+        return 0;
+      }
+      else if(strcmp(str, "list")==0) {
+        *buf='\0';
+        buf++;
+      }
+      else if (strcmp(str, "checksum")==0) {
+        *buf='\1';
+        buf++;
+      }
+      else {
+        *err = "invalid mode for 'bulk_pull_blocks' message";
+        return 0;
+      }
+      lua_pop(L, 1);
+      
+      lua_getfield(L, -1, "max_count");
+      num = lua_tonumber(L, -1);
+      lua_pop(L, 1);
+      //*(uint64_t *)buf=htonl(num); // no network-byte order on the wire
+      *(uint32_t *)buf=num;
+      buf+=4;
+      
+      break;
   }
   return buf - buf_start;
 }

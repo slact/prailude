@@ -147,7 +147,7 @@ local Block_instance = {
       prev_block = self:get_previous()
       --print("VERIFY: PREVIOUS IS", prev_block:debug())
       if not prev_block then
-        return nil, ("previous block %s not found"):format(Util.bytes_to_hex(self.previous))
+        return nil, "gap", "previous"
       elseif not prev_block:is_valid("ledger") then
         return nil, "retry"
       end
@@ -159,7 +159,7 @@ local Block_instance = {
       --was the send directed to this account?
       source_block = self:get_source()
       if not source_block then
-        return nil, ("send block %s for '%s' not found"):format(Util.bytes_to_hex(self.source), btype)
+        return nil, "gap", "source"
       elseif not source_block:is_valid("ledger") then
         return nil, "retry"
       end

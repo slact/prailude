@@ -95,11 +95,22 @@ local PeerDB_meta = {__index = {
     end
     stmt:bind(n+1, Peer.inactivity_timeout)
     stmt:bind(n+2, limit)
-    local data = stmt:nrows()(stmt)
-    stmt:reset()
-    if data then
-      local id = peer_id(data.address, data.port)
-      return cache:get(id) or Peer.new(data)
+    
+    if limit == 1 then
+      local data = stmt:nrows()(stmt)
+      stmt:reset()
+      if data then
+        local id = peer_id(data.address, data.port)
+        return cache:get(id) or Peer.new(data)
+      end
+    else
+      local peers = {}
+      for peer_data in stmt:nrows() do
+        local id = peer_id(peer_data.address, peer_data.port)
+        table.insert(peers, cache:get(id) or Peer.new(peer_data))
+      end
+      DBG(peers)
+      return peers
     end
   end,
   
@@ -175,7 +186,7 @@ local PeerDB_meta = {__index = {
     end
     
     stmt:bind(1, keepalive_received_time)
-    if not keepalive_received_time or not self.last_keepalive_send then
+    if not keepalive_received_time or not self.last_keepalive_sent then
       stmt:bind(2, 1000)
     else
       stmt:bind(2, keepalive_received_time - self.last_keepalive_sent)

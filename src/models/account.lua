@@ -164,7 +164,7 @@ function Account.bulk_pull(frontier, peer, opt)
     tcp:write(bulk_pull_message:pack())
     local fresh_blocks, leftovers_or_err, done
     while tcp:read() do
-    local buf = tcp.buf:flush()
+      local buf = tcp.buf:flush()
       --print("buf", #buf)
       --print(Util.bytes_to_hex_debug(buf))
       --print("")

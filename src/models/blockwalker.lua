@@ -214,7 +214,7 @@ function BlockWalker.new(data)
     end
     
     assert(not block:is_valid("ledger"))
-    local ok, err = block:verify_ledger()
+    local ok, err, err_details = block:verify_ledger()
     
     if ok then
       --print("VERIFIED", block:debug())
@@ -269,7 +269,37 @@ function BlockWalker.new(data)
         end
       end
       return false, "retry"
+    elseif err == "gap" then
+      print("GAP", err_details or "", block and block:debug())
+      local gap_hash
+      if err_details == "source" then
+        gap_hash = block.source
+      elseif err_details == "previous" then
+        gap_hash = block.previous
+      else
+        error("unexpected block gap", tostring(err_details), block:debug())
+      end
+      local Nanonet = require "prailude.nanonet"
+      local gap_block, gap_block_err = coroutine.wrap(function()
+        local blocks, pull_err = Nanonet.bulk_block_pull {
+          min_hash = gap_hash,
+          max_mash = gap_hash,
+          mode = "list",
+          max_count = 1
+        }
+        if blocks then
+          return blocks[1]
+        else
+          return nil, pull_err
+        end
+      end)()
+      print(gap_block and gap_block:debug(), gap_block_err)
+      
+      
+      
+      
     else
+      print("fail:", err, err_details or "", block and block:debug())
       return false, err, block
     end
   end

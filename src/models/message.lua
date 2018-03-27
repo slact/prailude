@@ -89,7 +89,7 @@ function Message.new(msgtype, data) -- (data) is also ok, as long as there's a d
   end
   local msg = setmetatable(new_msg_data, Message_metatable)
   
-  if msgtype == "frontier_req" or msgtype == "bulk_pull" or msgtype == "bulk_push" then
+  if msgtype == "frontier_req" or msgtype == "bulk_pull" or msgtype == "bulk_push" or msgtype == "bulk_pull_blocks" then
     rawset(msg, "protocol", "tcp")
   else
     rawset(msg, "protocol", "udp")

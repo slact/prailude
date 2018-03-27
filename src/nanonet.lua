@@ -11,6 +11,7 @@ local Block = require "prailude.block"
 local BlockWalker = require "prailude.blockwalker"
 local Vote = require "prailude.vote"
 local Util = require "prailude.util"
+local Parser = require "prailude.util.parser"
 
 local uv = require "luv"
 local mm = require "mm"
@@ -134,16 +135,18 @@ function Nanonet.bootstrap()
   local gettime = require "prailude.util.lowlevel".gettime
   local maybe_interrupt; do
     local clock = os.clock
-    local tw0 = clock()
-    local n = 0
-    maybe_interrupt = function()
-      --print("TRY interrupt", n)
-      n = n+1
-      if n>20 then
-        n=0
-        if clock() - tw0 > 0.5 then
-          Timer.delay(10)
-          tw0=os.clock()
+    maybe_interrupt = function(n_max)
+      local tw0 = clock()
+      local n = 0
+      n_max = n_max or 5
+      return function()
+        n = n+1
+        if n > n_max then
+          n=0
+          if clock() - tw0 > 0.5 then
+            Timer.delay(10)
+            tw0=clock()
+          end
         end
       end
     end
@@ -152,7 +155,7 @@ function Nanonet.bootstrap()
   local coro = coroutine.create(function()
     --let's gather some peers first. 50 active peers should be enough
     
-    local fetch, import, verify = false, true, false
+    local fetch, import, verify = true, true, true
     
     if fetch then
       log:debug("bootstrap: preparing database...")
@@ -162,14 +165,14 @@ function Nanonet.bootstrap()
     
     local t0 = gettime()
     local t1, t2
-    local min_count = 100
-    log:debug("bootstrap: connecting to peers...")
-    while Peer.get_active_count() < min_count do
-      log:debug("bootstrap: gathering at least %i peers, have %i so far", min_count, Peer.get_active_count())
-      Timer.delay(1000)
-    end
     
     if fetch then
+      local min_count = 100
+      log:debug("bootstrap: connecting to peers...")
+      while Peer.get_active_count() < min_count do
+        log:debug("bootstrap: gathering at least %i peers, have %i so far", min_count, Peer.get_active_count())
+        Timer.delay(1000)
+      end
       t1 = gettime()
       log:debug("bootstrap: fetching frontiers... this should take a few minutes...")
       Nanonet.fetch_frontiers(3)
@@ -186,14 +189,23 @@ function Nanonet.bootstrap()
     if import then
       local need_to_import = Block.count_bootstrapped()
       log:debug("bootstrap: importing %i blocks... this should take a few minutes...", need_to_import)
-      local imported = 0
       local ti0 = gettime()
-      Block.import_unverified_bootstrap_blocks(function(n, t, timestamp)
-        --progress handler
-        imported = imported + n
-        log:debug("bootstrap: t: %.3f imported %i of %i blocks [%3.2f%%], (%.0fblocks/sec)", timestamp or 0, imported, need_to_import, (imported/need_to_import)*100, n/(t))
+      
+      local imported, last_imported, t_diff, last_timestamp
+      local watcher = Timer.interval(1000, function()
+        log:debug("bootstrap: t: %.3f imported %i of %i blocks [%3.2f%%], (%.0fblocks/sec)", last_timestamp or 0, imported, need_to_import, (imported/need_to_import)*100, last_imported/t_diff)
       end)
+      
+      Block.import_unverified_bootstrap_blocks(maybe_interrupt(1000), function(n, t, timestamp)
+        --progress handler
+        imported = (imported or 0) + n
+        last_imported = n
+        t_diff = t
+        last_timestamp = timestamp
+      end)
+      Timer.cancel(watcher)
       log:debug("bootstrap: imported %i blocks in %s", need_to_import, tdiff(ti0, gettime()))
+      
       --Block.clear_bootstrap()
     end
     
@@ -202,7 +214,7 @@ function Nanonet.bootstrap()
       local walker = BlockWalker.new {
         start = "genesis",
         direction = "frontier",
-        interrupt = maybe_interrupt
+        interrupt = maybe_interrupt(20)
       }
       
       local watcher = Timer.interval(1000, function()
@@ -224,7 +236,7 @@ function Nanonet.bootstrap()
     end
     
     local t3 = os.time()
-    log:debug("Bootstrap took %s", tdiff(t3-t0))
+    log:debug("Bootstrap took %s", tdiff(t0, t3))
     
   end)
   return coroutine.resume(coro)
@@ -235,128 +247,143 @@ function Nanonet.bulk_pull_accounts()
   local min_speed = 3 --blocks/sec
   local active_peers = {}
   local frontier_size = Frontier.get_size()
-  local total_blocks_fetched = 0
+  local total_blocks_fetched, total_accounts_fetched, total_accounts_failed = 0, 0, 0
   
   local account_frontier_score_delta = 1/frontier_size
   
-  local retry={}
   local source = Util.BatchSource(function(n)
     local batch = Frontier.get_range(50000, n)
     if #batch > 0 then
       return batch
     else
-      --retry the stuff that timed out
-      for v, _ in pairs(retry) do
-        table.insert(batch, v)
-      end
-      retry = {}
-      return batch
+      return nil
     end
   end)
   
   local sink = Util.BatchSink {
     batch_size = 10000,
     consume = function(batch)
-      --log:debug("start DB save of %i items", #batch)
-      local gettime = require "prailude.util.lowlevel".gettime
-      local t0=gettime()
       Block.batch_store_bootstrap(batch)
-      log:debug("DB save took %.3f sec", gettime()-t0)
     end
   }
   
-  local ok, failed, errs = coroutine.workpool({
-    work = function()
-      return source:next()
-    end,
-    max_workers = config.bootstrap.max_peers,
-    retry = 2,
-    progress = function(active_workers, work_done, _, work_failed)
-      local bus_data = {
-        complete = false,
-        active_peers = active_peers,
-        frontier_size = frontier_size,
-        accounts_fetched = #work_done,
-        accounts_failed = #work_failed
-      }
-      log:debug("bulk pull: using %i workers, finished %i of %i accounts [%3.2f%%] (%i blocks) (%i failed attempts)", active_workers, #work_done - #work_failed, frontier_size, 100 * #work_done / frontier_size, total_blocks_fetched, #work_failed)
-      
-      Bus.pub("bulk_pull:progress", bus_data)
-    end,
-    worker = function(acct_frontier)
-      local peer = assert(Peer.get_best_bootstrap_peer())
-      active_peers[peer] = {frontier = acct_frontier, blocks_pulled = 0}
-      local prev_blocks, slow_in_a_row = 0, 0
-      local acct_blocks_count, frontier_hash_found_or_err = Account.bulk_pull(acct_frontier, peer, {
-        consume = function(batch)
-          --blocks should have already been PoW and sig checked
-          for _, block in ipairs(batch) do
-            sink:add(block)
-          end
-          return #batch
-        end,
-        watchdog = function(blocks_so_far_count)
-          --print(tostring(peer), blocks_so_far_count, prev_blocks)
-          local blocks_fetched = blocks_so_far_count - prev_blocks
-          prev_blocks = blocks_so_far_count
-          if blocks_fetched < min_speed then -- too slow
-            if slow_in_a_row > 2 then
-              retry[acct_frontier]=true
-              return false, "account pull too slow"
-            else
-              slow_in_a_row = slow_in_a_row + 1
-            end
+  local function bulk_pull_worker(acct_frontier)
+    local peer = assert(Peer.get_best_bootstrap_peer())
+    active_peers[peer] = {frontier = acct_frontier, blocks_pulled = 0}
+    local prev_blocks, slow_in_a_row = 0, 0
+    local acct_blocks_count, frontier_hash_found_or_err = Account.bulk_pull(acct_frontier, peer, {
+      consume = function(batch)
+        --blocks should have already been PoW and sig checked
+        for _, block in ipairs(batch) do
+          sink:add(block)
+        end
+        return #batch
+      end,
+      watchdog = function(blocks_so_far_count)
+        --print(tostring(peer), blocks_so_far_count, prev_blocks)
+        local blocks_fetched = blocks_so_far_count - prev_blocks
+        prev_blocks = blocks_so_far_count
+        if blocks_fetched < min_speed then -- too slow
+          if slow_in_a_row > 2 then
+            return false, "account pull too slow"
           else
-            active_peers[peer].blocks_pulled = blocks_so_far_count
+            slow_in_a_row = slow_in_a_row + 1
           end
-        end
-      })
-      
-      --print("bulk   pull... done")
-      active_peers[peer]=nil
-      
-      if acct_blocks_count then
-        if frontier_hash_found_or_err then
-          --everything's okay
-          total_blocks_fetched = total_blocks_fetched + acct_blocks_count
-          peer:update_bootstrap_score(account_frontier_score_delta)
-          return acct_blocks_count
         else
-          --assume it's the peer's fault we didn't find the frontier hash
-          -- ATTACK VECTOR: this assumes we trust the frontier, which means an attacker
-          -- that poisons the frontier will eventually gain bootstrap-score over legit peers
-          peer:update_bootstrap_score(-100 * account_frontier_score_delta)
-          print("peer", tostring(peer), "account found, but without frontier")
-          return nil, "account found, but without frontier"
+          active_peers[peer].blocks_pulled = blocks_so_far_count
         end
-      else -- there was an error
-        local err = frontier_hash_found_or_err
-        log:debug("bootstrap:  acct pull %s from peer %s error %s", Account.to_readable(acct_frontier.account), tostring(peer), err)
-        if err:match("^bad signature") or err:match("^bad PoW") or err:match("^bad block") then
-          peer:update_bootstrap_score(- 100 * account_frontier_score_delta)
-        elseif err == "account pull too slow" then
-          peer:update_bootstrap_score(- 10 * account_frontier_score_delta)
-        elseif err == "Connection refused" or err == "No route to host" then
-          peer:update_bootstrap_score(-1)
-        else
-          peer:update_bootstrap_score(-account_frontier_score_delta)
-        end
-        return nil, err
       end
+    })
+    
+    --print("bulk   pull... done")
+    active_peers[peer]=nil
+    
+    if acct_blocks_count then
+      if frontier_hash_found_or_err then
+        --everything's okay
+        total_blocks_fetched = total_blocks_fetched + acct_blocks_count
+        peer:update_bootstrap_score(account_frontier_score_delta)
+        return acct_blocks_count
+      else
+        --assume it's the peer's fault we didn't find the frontier hash
+        -- ATTACK VECTOR: this assumes we trust the frontier, which means an attacker
+        -- that poisons the frontier will eventually gain bootstrap-score over legit peers
+        total_blocks_fetched = total_blocks_fetched + acct_blocks_count
+        peer:update_bootstrap_score(-100 * account_frontier_score_delta)
+        print("peer", tostring(peer), "account found, but without frontier. that's okay though, we'll take it")
+        --return nil, "account found, but without frontier"
+        return acct_blocks_count
+      end
+    else -- there was an error
+      local err = frontier_hash_found_or_err
+      log:debug("bootstrap:  acct pull %s from peer %s error %s", Account.to_readable(acct_frontier.account), tostring(peer), err)
+      if err:match("^bad signature") or err:match("^bad PoW") or err:match("^bad block") then
+        peer:update_bootstrap_score(- 100 * account_frontier_score_delta)
+      elseif err == "account pull too slow" then
+        peer:update_bootstrap_score(- 10 * account_frontier_score_delta)
+      elseif err == "Connection refused" or err == "No route to host" then
+        peer:update_bootstrap_score(-1)
+      else
+        peer:update_bootstrap_score(-account_frontier_score_delta)
+      end
+      return nil, err
     end
-  })
-  sink:finish()
+  end
+  
+  local current_frontier_size = frontier_size
+  
+  local function bulk_pull_progress(active_workers, work_done, _, work_failed)
+    local bus_data = {
+      complete = false,
+      active_peers = active_peers,
+      frontier_size = frontier_size,
+      accounts_fetched = #work_done,
+      accounts_failed = #work_failed
+    }
+    log:debug("bulk pull: using %i workers, finished %i of %i accounts [%3.2f%%] (%i blocks) (%i failed attempts)", active_workers, #work_done, current_frontier_size, 100 * #work_done / current_frontier_size, total_blocks_fetched, #work_failed)
+    
+    Bus.pub("bulk_pull:progress", bus_data)
+  end
+  local ok, failed, errs
+  for i=1, 5 do
+    ok, failed, errs = coroutine.workpool({
+      work = function()
+        return source:next()
+      end,
+      max_workers = config.bootstrap.max_peers,
+      retry = 2,
+      progress = bulk_pull_progress,
+      worker = bulk_pull_worker
+    })
+    sink:finish()
+    total_accounts_fetched = total_accounts_fetched + #ok
+    log:debug("bulk_pull attempt %i: %i pulled, %i failed", i, #ok, #failed)
+    
+    if #failed == 0 then
+      break
+    else
+      --retry what's failed
+      current_frontier_size = #failed
+      source = Util.BatchSource(function(n)
+        if n == 0 then
+          return failed
+        else
+          return nil
+        end
+      end)
+    end
+  end
   
   local bus_data = {
     complete = true,
     frontier_size = frontier_size,
-    accounts_fetched = #ok,
-    accounts_failed = #failed,
+    accounts_fetched = total_accounts_fetched,
+    accounts_failed = total_accounts_failed,
     blocks_fetched = total_blocks_fetched
   }
   
   Bus.pub("bulk_pull:progress",  bus_data)
-  return ok, failed, errs
+  return total_accounts_fetched, failed, errs
 end
 
 function Nanonet.fetch_frontiers(min_good_frontier_requests)
@@ -472,6 +499,78 @@ function Nanonet.fetch_frontiers(min_good_frontier_requests)
   })
   
   return frontiers_set, failed, errs
+end
+
+function Nanonet.bulk_pull_blocks(opt, peer)
+  local msg = Message.new("bulk_pull_blocks", opt)
+  
+  if not peer then
+    -- try this with a few compatible peers
+    local res, err
+    for i, try_peer in ipairs(Peer.get_best_bootstrap_peer{min_version=6, limit=20}) do
+      print("try", i, tostring(try_peer))
+      res, err = Nanonet.bulk_pull_blocks(opt, try_peer)
+      if res and #res > 0 then
+        return res
+      end
+    end
+    return res, err
+  end
+  
+  assert(peer)
+  
+  local min_hash, max_hash, max_count = msg.min_hash, msg.max_hash, msg.max_count
+  local function check_block(block)
+    if block.hash < min_hash or block.hash > max_hash then
+      return nil, "block out of range"
+    end
+    if not block:verify_PoW() then
+      return nil, "PoW check failed"
+    end
+    return true
+  end
+  
+  if not peer then return nil, "couldn't find appropriate peer" end
+  local block
+  local blocks = {}
+  local res, tcp_err = peer:tcp_session("bulk pull blocks", function(tcp)
+    tcp:write(msg:pack())
+    while tcp:read() do
+      local buf = tcp.buf:flush()
+      print(Util.bytes_to_hex_debug(buf))
+      if msg.mode == "list" then
+        local fresh_blocks, leftovers_or_err, done = Parser.unpack_bulk(buf)
+        
+        if fresh_blocks then
+          for _, blockdata in ipairs(fresh_blocks) do
+            block = Block.new(blockdata)
+            local ok, err = check_block(block)
+            if not ok then
+              return nil, err
+            else
+              table.insert(blocks, block)
+              if #blocks > max_count then
+                return nil, "too many blocks sent"
+              end
+            end
+          end
+          
+          if leftovers_or_err and #leftovers_or_err > 0 then
+            tcp.buf:push(leftovers_or_err)
+          end
+        end
+        
+        if done then
+          return blocks
+        end
+        
+      else --checksum
+        return buf --just the checksum, right?
+      end
+    end
+  end)
+  
+  return res, tcp_err
 end
 
 return Nanonet
