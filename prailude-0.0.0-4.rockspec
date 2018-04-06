@@ -25,10 +25,43 @@ dependencies = {
 }
 build = {
   type = "builtin",
+  external_dependencies = {
+    ZLIB = {
+      header = "lzib.h",
+      library = "z",
+    },
+    PTHREAD = {
+      header = "pthread.h"
+    },
+    BZIP = {
+      header = "bzlib.h",
+      library = "bz2"
+    }
+  },
   modules = {
     ["prailude.util"] =          "src/util/util.lua",
     ["prailude.util.timer"] =    "src/util/timer.lua",
     ["prailude.util.coroutine"] ="src/util/coroutine.lua",
+    ["prailude.util.tokyocabinet"] = {
+      sources = {
+        --tokyocabinet
+        "src/util/tokyocabinet/md5.c",
+        "src/util/tokyocabinet/myconf.c",
+        "src/util/tokyocabinet/tcadb.c",
+        "src/util/tokyocabinet/tcbdb.c",
+        "src/util/tokyocabinet/tcfdb.c",
+        "src/util/tokyocabinet/tchdb.c",
+        "src/util/tokyocabinet/tctdb.c",
+        "src/util/tokyocabinet/tcutil.c",
+        -- lua binding
+        "src/util/tokyocabinet/tokyocabinet.c"
+      },
+      incdirs = { "src/util/tokyocabinet"},
+      defines = {
+        "NDEBUG"
+      },
+      libraries = {"z", "bz2", "pthread"}
+    },
     ["prailude.util.lowlevel"] = {
       sources = {
         "src/util/util.c",
