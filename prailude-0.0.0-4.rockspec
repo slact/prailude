@@ -61,7 +61,8 @@ build = {
       defines = {
         "ED25519_CUSTOMHASH",
         "ED25519_CUSTOMRNG",
-        "ARGON2_NO_THREADS"
+        --"ED25519_SSE2",
+        "ARGON2_NO_THREADS",
       },
       incdirs = {
         "src/util/crypto/argon2/include",
