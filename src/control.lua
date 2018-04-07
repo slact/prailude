@@ -10,6 +10,7 @@ local log = require "prailude.log"-- "control"
 local Nanonet = require "prailude.nanonet"
 local Timer = require "prailude.util.timer"
 local DB = require "prailude.db"
+local config = require "prailude.config"
 
 local initialized = false
 
@@ -18,7 +19,7 @@ function Control.initialize()
     log:debug("already initialized")
     return nil, "already initialized"
   end
-  DB.initialize("sqlite")
+  DB.initialize(config.data.db)
   Server.initialize()
   Nanonet.initialize()
   initialized = true

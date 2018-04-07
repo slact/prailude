@@ -10,6 +10,10 @@ local cfg = {
     min_frontier_size = 430000,
     max_peers = 50,
     
+  },
+  data = {
+    db = "sqlite-tc",
+    path = "data"
   }
 }
 
