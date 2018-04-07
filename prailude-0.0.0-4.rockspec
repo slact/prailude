@@ -122,14 +122,14 @@ build = {
     ["prailude.db"] =            "src/db.lua",
     --nilDB, an erroring-out placeholder
     ["prailude.db.nil"] =        "src/db/nil.lua",    
-    --sqlite
-    ["prailude.db.sqlite"] =        "src/db/sqlite.lua",
-    ["prailude.db.sqlite.peer"] =   "src/db/sqlite/peerdb.lua",
-    ["prailude.db.sqlite.block"] =  "src/db/sqlite/blockdb.lua",
-    ["prailude.db.sqlite.blockwalker"] =  "src/db/sqlite/blockwalkerdb.lua",
-    ["prailude.db.sqlite.frontier"]="src/db/sqlite/frontierdb.lua",
-    ["prailude.db.sqlite.account"] ="src/db/sqlite/accountdb.lua",
-    ["prailude.db.sqlite.kv"] =     "src/db/sqlite/kvdb.lua", --key/value store
+    --sqlite-tokyocabinet hybrid
+    ["prailude.db.sqlite-tc"] =           "src/db/sqlite-tc.lua",
+    ["prailude.db.sqlite-tc.peer"] =      "src/db/sqlite-tc/peerdb.lua",
+    ["prailude.db.sqlite-tc.block"] =     "src/db/sqlite-tc/blockdb.lua",
+    ["prailude.db.sqlite-tc.blockwalker"]="src/db/sqlite-tc/blockwalkerdb.lua",
+    ["prailude.db.sqlite-tc.frontier"]=   "src/db/sqlite-tc/frontierdb.lua",
+    ["prailude.db.sqlite-tc.account"] =   "src/db/sqlite-tc/accountdb.lua",
+    ["prailude.db.sqlite-tc.kv"] =        "src/db/sqlite-tc/kvdb.lua", --key/value store
 
     ["prailude.vote"] =       "src/models/vote.lua",
     ["prailude.message"] =    "src/models/message.lua",

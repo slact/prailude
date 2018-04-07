@@ -1,13 +1,14 @@
 local sqlite3 = require "lsqlite3"
 local Bus = require "prailude.bus"
+local config = require "prailude.config"
 
 local subdbs = {
-  require "prailude.db.sqlite.peer",
-  require "prailude.db.sqlite.block",
-  require "prailude.db.sqlite.blockwalker",
-  require "prailude.db.sqlite.frontier",
-  require "prailude.db.sqlite.account",
-  require "prailude.db.sqlite.kv",
+  require "prailude.db.sqlite-tc.peer",
+  require "prailude.db.sqlite-tc.block",
+  require "prailude.db.sqlite-tc.blockwalker",
+  require "prailude.db.sqlite-tc.frontier",
+  require "prailude.db.sqlite-tc.account",
+  require "prailude.db.sqlite-tc.kv",
 }
 
 local default_db
@@ -29,7 +30,7 @@ end
 
 function DB.open(name, opt)
   assert(not dbs[name], "db with name " .. name .. " already exists")
-  local db, err_code, err_msg = sqlite3.open(opt.db_file or name..".db")
+  local db, err_code, err_msg = sqlite3.open(config.data.path.."/"..(opt.db_file or name..".db"))
   if not db then
     error("error opening db  " .. name .. ": " .. (err_msg or err_code))
   end
@@ -86,7 +87,7 @@ function DB.initialize()
   })
   default_db = db
   assert(db:exec("ATTACH DATABASE ':memory:' as mem") == sqlite3.OK, db:errmsg())
-  assert(db:exec("ATTACH DATABASE 'tmp.db' as disktmp") == sqlite3.OK, db:errmsg())
+  assert(db:exec("ATTACH DATABASE '".. config.data.path .."/tmp.db' as disktmp") == sqlite3.OK, db:errmsg())
   DB.pragma(db, {
     ["disktmp.synchronous"] = false, --don't really care if the db lags behind on crash
     ["disktmp.journal_mode"] = false,
