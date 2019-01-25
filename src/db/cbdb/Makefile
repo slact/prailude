@@ -1,6 +1,6 @@
 TARGET = cbdb_test
 LIBS = 
-CC = gcc
+CC = clang
 CFLAGS = -g -Wall
 
 .PHONY: default all clean
