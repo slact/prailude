@@ -1,6 +1,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <stddef.h>
+#include <string.h>
 
 typedef uint32_t cbdb_rownum_t;
 #define CBDB_ROWNUM_MAX  ((cbdb_rownum_t ) -1)
@@ -23,6 +24,7 @@ typedef struct {
 
 typedef struct {
   char    *path;
+  int      fd;
   void    *ptr; //pointer to first byte in the file
   void    *start; //location of first data byte (may not be first byte of file due to headers)
   void    *end; //location of last data byte
@@ -39,15 +41,20 @@ typedef struct {
   cbdb_mmap_t        mmap;
 } cbdb_index_t;
 
+
+#define CBDB_ERROR_MAX_LEN 1024
 typedef enum {
   CBDB_NO_ERROR             = 0,
   CBDB_ERROR_UNSPECIFIED    = 1,
   CBDB_ERROR_NOMEMORY       = 2,
+  CBDB_ERROR_FILE_NOT_FOUND = 3,
+  CBDB_ERROR_FILE_EXISTS    = 4,
 } cbdb_error_code_t;
 
 typedef struct {
   cbdb_error_code_t    code;
   char                *str;
+  int                  errno_val;
 } cbdb_error_t;
 
 typedef struct {
@@ -58,6 +65,7 @@ typedef struct {
 
 typedef struct {
   char         *path;
+  char         *name;
   cbdb_mmap_t   data;
   cbdb_config_t config;
   struct {
@@ -67,6 +75,7 @@ typedef struct {
   struct {
     char         *id;
     char         *data;
+    char         *error;
   }             buffer;
   cbdb_error_t  error;
 } cbdb_t;
@@ -74,8 +83,8 @@ typedef struct {
 
 
 cbdb_t *cbdb_open(char *path, cbdb_error_t *err);
-cbdb_t *cbdb_create(char*path, cbdb_config_t *cf, cbdb_error_t *err);
-int cbdb_close(cbdb_t *cbdb);
+cbdb_t *cbdb_create(char *path, char *name, cbdb_config_t *cf, cbdb_error_t *err);
+void cbdb_close(cbdb_t *cbdb);
 
 int cbdb_insert(cbdb_t *cbdb, cbdb_str_t *id, cbdb_str_t *data);
 int cbdb_insert_row(cbdb_t *cbdb, cbdb_row_t *row); //id and data should be pre-filled
