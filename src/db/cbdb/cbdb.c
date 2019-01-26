@@ -17,7 +17,7 @@
 #endif
 
 
-#define CBDB_PAGESIZE sysconf(_SC_PAGE_SIZE)
+#define CBDB_PAGESIZE (sysconf(_SC_PAGE_SIZE))
 
 static cbdb_t *cbdb_alloc(char *path, char *name, cbdb_config_t *cf) {
   cbdb_t    *db;
@@ -84,7 +84,8 @@ static int cbdb_lock(cbdb_t *db) {
   char buf[4096];
   snprintf(buf, 4096, "%s%c%s.lock.cbdb", db->path, PATH_SLASH, db->name);
   printf("%s\n", buf);
-  int fd = open(buf, O_CREAT | O_EXCL);
+  mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP;
+  int fd = open(buf, O_CREAT | O_EXCL, mode);
   if(fd == -1) {
     if(errno == EEXIST) {
       cbdb_error(db, CBDB_ERROR_LOCK_FAILED, "Database is already locked");
@@ -127,8 +128,8 @@ static int file_getsize(int fd, off_t *sz, cbdb_error_t *err) {
 
 static int cbdb_open_data_file(cbdb_t *db, cbdb_error_t *err) {
   off_t sz;
-  
-  if((db->data.fd = open(db->data.path, O_CREAT)) == -1) {
+  mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+  if((db->data.fd = open(db->data.path, O_CREAT, mode)) == -1) {
     cbdb_set_error(err, CBDB_ERROR_NOMEMORY, "Failed to open data file");
     return 0;
   }
@@ -145,20 +146,17 @@ static int cbdb_open_data_file(cbdb_t *db, cbdb_error_t *err) {
     return 0;
   }
   
-  
-  
   return 1;
 }
 
 
-cbdb_t *cbdb_create(char *path, char *name, cbdb_config_t *cf, cbdb_error_t *err) {
+cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_error_t *err) {
   cbdb_t    *db = cbdb_alloc(path, name, cf);
   if(db == NULL) {
     cbdb_set_error(err, CBDB_ERROR_NOMEMORY, "Failed to allocate memory for cbdb struct");
     return NULL;
   }
 
-  
   db->config = *cf;
   strcpy(db->path, path);
   strcpy(db->name, name);
@@ -178,12 +176,14 @@ cbdb_t *cbdb_create(char *path, char *name, cbdb_config_t *cf, cbdb_error_t *err
   char buf[4096];
   snprintf(buf, 4096, "%s%c%s.data.cbdb", db->path, PATH_SLASH, db->name);
   
+  /*
   //file existence check
   if(access(buf, F_OK) != -1){
     cbdb_set_error(err, CBDB_ERROR_FILE_EXISTS, "Data file already exits");
     cbdb_free(db);
     return NULL;
   }
+  */
   
   if((db->data.path = malloc(strlen(buf) + 1)) == NULL) {
     cbdb_set_error(err, CBDB_ERROR_NOMEMORY, "Failed to allocate memory for data file path");

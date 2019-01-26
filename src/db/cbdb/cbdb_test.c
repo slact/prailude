@@ -9,13 +9,14 @@ int main(void) {
     .data_len = 50
   };
   cbdb_error_t err;
-  cbdb_t *db = cbdb_create("./" ,"foo", &cf, &err);
+  cbdb_t *db = cbdb_open("./" ,"foo", &cf, &err);
   if(db) {
     printf("opened ok\n");
+    cbdb_close(db);
+    return 1;
   }
   else {
     printf("ERROR: %d: %s, errno %d %s\n", err.code, err.str, err.errno_val, strerror(err.errno_val));
+    return 0;
   }
-  
-  return 0; 
 }

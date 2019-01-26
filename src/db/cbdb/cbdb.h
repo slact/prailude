@@ -84,8 +84,8 @@ typedef struct {
 
 
 
-cbdb_t *cbdb_open(char *path, cbdb_error_t *err);
-cbdb_t *cbdb_create(char *path, char *name, cbdb_config_t *cf, cbdb_error_t *err);
+//cbdb_t *cbdb_open(char *path, cbdb_error_t *err);
+cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_error_t *err);
 void cbdb_close(cbdb_t *cbdb);
 
 int cbdb_insert(cbdb_t *cbdb, cbdb_str_t *id, cbdb_str_t *data);
