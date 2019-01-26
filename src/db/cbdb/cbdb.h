@@ -1,7 +1,6 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <stddef.h>
-#include <string.h>
 
 typedef uint32_t cbdb_rownum_t;
 #define CBDB_ROWNUM_MAX  ((cbdb_rownum_t ) -1)
@@ -25,9 +24,10 @@ typedef struct {
 typedef struct {
   char    *path;
   int      fd;
-  void    *ptr; //pointer to first byte in the file
-  void    *start; //location of first data byte (may not be first byte of file due to headers)
-  void    *end; //location of last data byte
+  void    *start; //first valid mmapped address, also the first byte of the file
+  void    *fist; //lfirst data byte (may not be first byte of file due to headers)
+  void    *last; //last data byte
+  void    *end; //last valid mmapped address
 } cbdb_mmap_t;
 
 typedef enum {
@@ -49,6 +49,8 @@ typedef enum {
   CBDB_ERROR_NOMEMORY       = 2,
   CBDB_ERROR_FILE_NOT_FOUND = 3,
   CBDB_ERROR_FILE_EXISTS    = 4,
+  CBDB_ERROR_LOCK_FAILED    = 5,
+  CBDB_ERROR_FILE_ACCESS    = 6,
 } cbdb_error_code_t;
 
 typedef struct {

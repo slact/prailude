@@ -8,12 +8,14 @@
 #include <fcntl.h>
 
 #include <sys/mman.h>
+#include <sys/stat.h>
 
 #if defined _WIN32 || defined __CYGWIN__
 #define PATH_SLASH '\\'
 #else
 #define PATH_SLASH '/'
 #endif
+
 
 #define CBDB_PAGESIZE sysconf(_SC_PAGE_SIZE)
 
@@ -41,19 +43,21 @@ static cbdb_t *cbdb_alloc(char *path, char *name, cbdb_config_t *cf) {
 }
 
 static void cbdb_free(cbdb_t *db) {
-  free(db->data.path);
+  if(db->data.path) {
+    free(db->data.path);
+  }
   free(db);
 }
 
-static void cbdb_set_error(cbdb_error_t *err, cbdb_error_code_t code, int errno_global, char *error_string) {
+static void cbdb_set_error(cbdb_error_t *err, cbdb_error_code_t code, char *error_string) {
   if(err) {
     err->code = code;
     err->str = error_string;
-    err->errno_val = errno_global;
+    err->errno_val = errno;
   }
 }
 
-static void cbdb_error(cbdb_t *db, cbdb_error_code_t code, int errno_global, char *err_fmt, ...) {
+static void cbdb_error(cbdb_t *db, cbdb_error_code_t code, char *err_fmt, ...) {
   /*
   int num_args = 0;
   
@@ -72,18 +76,85 @@ static void cbdb_error(cbdb_t *db, cbdb_error_code_t code, int errno_global, cha
   va_list ap;
   va_start(ap, err_fmt);
   vsnprintf(db->buffer.error, CBDB_ERROR_MAX_LEN, err_fmt, ap);
-  cbdb_set_error(&db->error, code, errno_global, db->buffer.error);
+  cbdb_set_error(&db->error, code, db->buffer.error);
   va_end(ap);
 }
 
+static int cbdb_lock(cbdb_t *db) {
+  char buf[4096];
+  snprintf(buf, 4096, "%s%c%s.lock.cbdb", db->path, PATH_SLASH, db->name);
+  printf("%s\n", buf);
+  int fd = open(buf, O_CREAT | O_EXCL);
+  if(fd == -1) {
+    if(errno == EEXIST) {
+      cbdb_error(db, CBDB_ERROR_LOCK_FAILED, "Database is already locked");
+    }
+    else {
+      cbdb_error(db, CBDB_ERROR_LOCK_FAILED, "Can't lock database");
+    }
+    return 0;
+  }
+  else {
+    //lock file created, i don't think we need to keep its fd open
+    close(fd);
+    return 1;
+  }
+}
 
+static int cbdb_unlock(cbdb_t *db) {
+  char buf[4096];
+  snprintf(buf, 4096, "%s%c%s.lock.cbdb", db->path, PATH_SLASH, db->name);
+  if(access(buf, F_OK) == -1){ //no lock present, nothing to unlock
+    return 1;
+  }
+  if(remove(buf) == 0) {
+    return 1;
+  }
+  else {
+    return 0;
+  }
+}
 
-//static cbdb_data_create_file(
+static int file_getsize(int fd, off_t *sz, cbdb_error_t *err) {
+  struct stat st;
+  if(fstat(fd, &st)) {
+    cbdb_set_error(err, CBDB_ERROR_FILE_ACCESS, "Failed to get filesize");
+    return 0;
+  }
+  *sz = st.st_size;
+  return 1;
+}
+
+static int cbdb_open_data_file(cbdb_t *db, cbdb_error_t *err) {
+  off_t sz;
+  
+  if((db->data.fd = open(db->data.path, O_CREAT)) == -1) {
+    cbdb_set_error(err, CBDB_ERROR_NOMEMORY, "Failed to open data file");
+    return 0;
+  }
+  
+  sz = CBDB_PAGESIZE*10;
+  db->data.start = mmap(NULL, sz, PROT_READ|PROT_WRITE, MAP_SHARED, db->data.fd, 0);
+  db->data.end = (char *)&db->data.start[sz];
+  
+  if(!file_getsize(db->data.fd, &sz, err)) {
+    munmap(db->data.start, db->data.end - db->data.start);
+    close(db->data.fd);
+    db->data.fd = -1;
+    db->data.start = NULL;
+    return 0;
+  }
+  
+  
+  
+  return 1;
+}
+
 
 cbdb_t *cbdb_create(char *path, char *name, cbdb_config_t *cf, cbdb_error_t *err) {
   cbdb_t    *db = cbdb_alloc(path, name, cf);
   if(db == NULL) {
-    cbdb_set_error(err, CBDB_ERROR_NOMEMORY, 0, "Failed to allocate memory for cbdb struct");
+    cbdb_set_error(err, CBDB_ERROR_NOMEMORY, "Failed to allocate memory for cbdb struct");
     return NULL;
   }
 
@@ -91,8 +162,17 @@ cbdb_t *cbdb_create(char *path, char *name, cbdb_config_t *cf, cbdb_error_t *err
   db->config = *cf;
   strcpy(db->path, path);
   strcpy(db->name, name);
-  if(db->path[strlen(db->path)]==PATH_SLASH) {
-    db->path[strlen(db->path)] = '\00';
+  int len = strlen(db->path);
+  if(len > 0 && db->path[len-1]==PATH_SLASH) {
+    db->path[len-1] = '\00';
+  }
+  printf("%s\n", db->path);
+  if(!cbdb_lock(db)) {
+    if(err) {
+      *err = db->error;
+    }
+    cbdb_free(db);
+    return NULL;
   }
   
   char buf[4096];
@@ -100,22 +180,21 @@ cbdb_t *cbdb_create(char *path, char *name, cbdb_config_t *cf, cbdb_error_t *err
   
   //file existence check
   if(access(buf, F_OK) != -1){
-    cbdb_set_error(err, CBDB_ERROR_FILE_EXISTS, 0, "Data file already exits");
+    cbdb_set_error(err, CBDB_ERROR_FILE_EXISTS, "Data file already exits");
+    cbdb_free(db);
     return NULL;
   }
   
   if((db->data.path = malloc(strlen(buf) + 1)) == NULL) {
-    cbdb_set_error(err, CBDB_ERROR_NOMEMORY, 0, "Failed to allocate memory for data file path");
+    cbdb_set_error(err, CBDB_ERROR_NOMEMORY, "Failed to allocate memory for data file path");
+    cbdb_free(db);
     return NULL;
   }
   strcpy(db->data.path, buf);
   
-  if((db->data.fd = open(db->data.path, O_CREAT)) == -1) {
-    cbdb_set_error(err, CBDB_ERROR_NOMEMORY, errno, "Failed to open data file");
+  if(!cbdb_open_data_file(db, err)) {
     return NULL;
   }
-  
-  db->data.ptr = mmap(NULL, CBDB_PAGESIZE*10, PROT_READ|PROT_WRITE, MAP_SHARED, db->data.fd, 0);
   
   
   return db;
@@ -123,5 +202,7 @@ cbdb_t *cbdb_create(char *path, char *name, cbdb_config_t *cf, cbdb_error_t *err
 
 void cbdb_close(cbdb_t *db) {
   //TODO: close all the things
+  cbdb_unlock(db);
   cbdb_free(db);
 }
+

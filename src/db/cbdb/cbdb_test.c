@@ -11,10 +11,10 @@ int main(void) {
   cbdb_error_t err;
   cbdb_t *db = cbdb_create("./" ,"foo", &cf, &err);
   if(db) {
-    printf("opened ok");
+    printf("opened ok\n");
   }
   else {
-    printf("ERROR: %d: %s, errno %d %s", err.code, err.str, err.errno_val, strerror(err.errno_val));
+    printf("ERROR: %d: %s, errno %d %s\n", err.code, err.str, err.errno_val, strerror(err.errno_val));
   }
   
   return 0; 
