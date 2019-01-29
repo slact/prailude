@@ -6,10 +6,11 @@
 int main(void) {
   cbdb_config_t cf = {
     .id_len = 10,
-    .data_len = 50
+    .data_len = 50,
+    .index_count = 0
   };
   cbdb_error_t err;
-  cbdb_t *db = cbdb_open("./" ,"foo", &cf, &err);
+  cbdb_t *db = cbdb_open("./" ,"foo", &cf, NULL, &err);
   if(db) {
     printf("opened ok\n");
     cbdb_close(db);
