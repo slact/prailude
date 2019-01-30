@@ -1,7 +1,7 @@
-TARGET = cbdb_test
+TARGET = rydb_test
 LIBS = 
 CC = clang
-CFLAGS = -g -Wall
+CFLAGS = -g -Wall -Wextra
 
 .PHONY: default all clean
 
