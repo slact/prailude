@@ -1,14 +1,16 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <stddef.h>
+#include <stdio.h>
 
-#define CBDB_FORMAT_VERSION 0
+#define CBDB_FORMAT_VERSION 1
 
 typedef uint32_t cbdb_rownum_t;
 #define CBDB_ROWNUM_MAX  ((cbdb_rownum_t ) -1)
 #define CBDB_ROWNUM_NULL ((cbdb_rownum_t ) 0)
 
 #define CBDB_ROW_LINKS_MAX 4
+#define CBDB_INDEX_NAME_MAX_LEN 64
 #define CBDB_INDICES_MAX 32
 
 typedef struct {
@@ -25,13 +27,16 @@ typedef struct {
 
 typedef struct {
   int      fd;
-  void    *start; //first valid mmapped address, also the first byte of the file
-  void    *fist; //lfirst data byte (may not be first byte of file due to headers)
-  void    *last; //last data byte
-  void    *end; //last valid mmapped address
-} cbdb_mmap_t;
+  FILE    *fp;
+  char    *start; //first valid mmapped address, also the first byte of the file
+  char    *first; //first data byte (may not be first byte of file due to headers)
+  char    *last; //last byte in file
+  char    *end; //last valid mmapped address
+  char    *path;
+} cbdb_file_t;
 
 typedef enum {
+  CBDB_INDEX_INVALID=0,
   CBDB_INDEX_HASHTABLE=1,
   CBDB_INDEX_BTREE=2
 } cbdb_index_type_t;
@@ -47,7 +52,7 @@ typedef struct {
 
 typedef struct {
   cbdb_config_index_t  config;
-  cbdb_mmap_t          data;
+  cbdb_file_t          data;
 } cbdb_index_t;
 
 #define CBDB_ERROR_MAX_LEN 1024
@@ -60,8 +65,11 @@ typedef enum {
   CBDB_ERROR_LOCK_FAILED    = 5,
   CBDB_ERROR_FILE_ACCESS    = 6,
   CBDB_ERROR_FILE_INVALID   = 7,
-  CBDB_ERROR_CONFIG_MISMATCH= 8,
-  CBDB_ERROR_REVISION_MISMATCH= 9,
+  CBDB_ERROR_FILE_SIZE      = 8,
+  CBDB_ERROR_CONFIG_MISMATCH= 9,
+  CBDB_ERROR_VERSION_MISMATCH= 11,
+  CBDB_ERROR_REVISION_MISMATCH= 12,
+  CBDB_ERROR_BAD_CONFIG= 13,
 } cbdb_error_code_t;
 
 typedef struct {
@@ -80,8 +88,8 @@ typedef struct {
 typedef struct {
   char           *path;
   char           *name;
-  cbdb_mmap_t     data;
-  cbdb_mmap_t     meta;
+  cbdb_file_t     data;
+  cbdb_file_t     meta;
   cbdb_config_t   config;
   cbdb_index_t   *index;
   struct {
@@ -96,6 +104,7 @@ typedef struct {
 
 cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_config_index_t *index, cbdb_error_t *err);
 void cbdb_close(cbdb_t *cbdb);
+const char *cbdb_index_type_str(cbdb_index_type_t);
 
 int cbdb_insert(cbdb_t *cbdb, cbdb_str_t *id, cbdb_str_t *data);
 int cbdb_insert_row(cbdb_t *cbdb, cbdb_row_t *row); //id and data should be pre-filled

@@ -11,6 +11,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include <signal.h>
+
 #if defined _WIN32 || defined __CYGWIN__
 #define PATH_SLASH '\\'
 #else
@@ -62,6 +64,8 @@ static cbdb_t *cbdb_alloc_memset(char *path, char *name, cbdb_config_t *cf, cbdb
   // althought it might be worth it to keep the names adjacent in memory later
   
   if(cf) {
+    db->config = *cf;
+    
     //and now the rest of the indices
     for(i=1; i<=cf->index_count; i++) {
       db->index[i].config = index_cf[i-1];
@@ -107,6 +111,15 @@ static void cbdb_set_error(cbdb_error_t *err, cbdb_error_code_t code, char *erro
     err->str = error_string;
     err->errno_val = errno;
   }
+}
+
+static void cbdb_set_errorf(cbdb_error_t *err, cbdb_error_code_t code, char *err_fmt, ...) {
+  static char buf[CBDB_ERROR_MAX_LEN];
+  va_list ap;
+  va_start(ap, err_fmt);
+  vsnprintf(buf, CBDB_ERROR_MAX_LEN, err_fmt, ap);
+  cbdb_set_error(err, code, buf);
+  va_end(ap);
 }
 
 static void cbdb_error(cbdb_t *db, cbdb_error_code_t code, char *err_fmt, ...) {
@@ -167,6 +180,21 @@ static int cbdb_unlock(cbdb_t *db) {
   }
 }
 
+static int cbdb_file_ensure_size(cbdb_t *db, cbdb_file_t *f, size_t desired_min_sz) {
+  size_t current_sz = f->last - f->start;
+  if(current_sz < desired_min_sz) {
+    if(lseek(f->fd, desired_min_sz - current_sz, SEEK_END) == -1) {
+      cbdb_error(db, CBDB_ERROR_FILE_SIZE, "Failed to seek to end of file");
+      return 0;
+    }
+    if(write(f->fd, "\00", 1) == -1) {
+      cbdb_error(db, CBDB_ERROR_FILE_SIZE, "Failed to grow file");
+      return 0;
+    }
+  }
+  return 1;
+}
+
 static int cbdb_file_getsize(cbdb_t *db, int fd, off_t *sz) {
   struct stat st;
   if(fstat(fd, &st)) {
@@ -177,87 +205,122 @@ static int cbdb_file_getsize(cbdb_t *db, int fd, off_t *sz) {
   return 1;
 }
 
-static int cbdb_munmap_file(cbdb_t *db, cbdb_mmap_t *mm) {
-  if(mm->start && mm->start != MAP_FAILED) {
-    munmap(mm->start, mm->end - mm->start);
+static int cbdb_file_close(cbdb_t *db, cbdb_file_t *f) {
+  if(f->start && f->start != MAP_FAILED) {
+    munmap(f->start, f->end - f->start);
   }
-  if(mm->fd != -1) {
-    close(mm->fd);
-    mm->fd = -1;
+  if(f->fp) {
+    fclose(f->fp);
+    f->fp = NULL;
+    //since fp was fdopen()'d, the fd is now also closed
+    f->fd = -1;
   }
-  mm->start = NULL;
+  if(f->fd != -1) {
+    close(f->fd);
+    f->fd = -1;
+  }
+  f->start = NULL;
+  f->first = NULL;
+  f->last = NULL;
+  f->end = NULL;
+  
+  if(f->path) {
+    free(f->path);
+    f->path = NULL;
+  }
   return 1;
 }
 
-static int cbdb_mmap_file(cbdb_t *db, char *what, cbdb_mmap_t *mm) {
+static int cbdb_file_open(cbdb_t *db, char *what, cbdb_file_t *f) {
   off_t sz;
-  char path[1024];
-  cbdb_filename(db, what, path, 1024);
-  mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP;
-  if((mm->fd = open(path, O_RDWR | O_CREAT, mode)) == -1) {
-    cbdb_error(db, CBDB_ERROR_FILE_ACCESS, "Failed to open file %s", path);
+  char path[2048];
+  cbdb_filename(db, what, path, 2048);
+  
+  if((f->path = malloc(strlen(path)+1)) == NULL) { //useful for debugging
+    cbdb_error(db, CBDB_ERROR_NOMEMORY, "Failed to allocate memory for file path %s", path);
     return 0;
+  }
+  strcpy(f->path, path);
+  
+  mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP;
+  if((f->fd = open(path, O_RDWR | O_CREAT, mode)) == -1) {
+    cbdb_error(db, CBDB_ERROR_FILE_ACCESS, "Failed to open file %s", path);
+    cbdb_file_close(db, f);
+    return 0;
+  }
+  
+  if((f->fp = fdopen(f->fd, "r+")) == NULL) {
+    cbdb_error(db, CBDB_ERROR_FILE_ACCESS, "Failed to fdopen file %s", path);
+    cbdb_file_close(db, f);
   }
   
   sz = CBDB_PAGESIZE*10;
-  mm->start = mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_SHARED, mm->fd, 0);
-  if(mm->start == MAP_FAILED) {
+  f->start = mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_SHARED, f->fd, 0);
+  if(f->start == MAP_FAILED) {
     cbdb_error(db, CBDB_ERROR_FILE_ACCESS, "Failed to mmap file %s", path);
-    cbdb_munmap_file(db, mm);
+    cbdb_file_close(db, f);
     return 0;
   }
+  f->end = &f->start[sz]; //last mmapped address
   
-  mm->end = &((char *)mm->start)[sz];
-  
-  if(!cbdb_file_getsize(db, mm->fd, &sz)) {
-    cbdb_munmap_file(db, mm);
-//     return 0;
+  if(!cbdb_file_getsize(db, f->fd, &sz)) {
+    cbdb_file_close(db, f);
+    return 0;
   }
+  f->last = &f->start[sz];//last actual byte in file
+  
   
   return 1;
 }
 
-static int cbdb_mmap_index_file(cbdb_t *db, int index_n) {
+static int cbdb_file_open_index(cbdb_t *db, int index_n) {
   char index_name[128];
   snprintf(index_name, 128, "index.%s", db->index[index_n].config.name);
-  return cbdb_mmap_file(db, index_name, &db->index[index_n].data);
+  return cbdb_file_open(db, index_name, &db->index[index_n].data);
 }
 
 static off_t cbdb_data_header_write(cbdb_t *db) {
-  char     *cur = db->data.start;
-  int       i;
-  cbdb_config_index_t *icf;
-  strcpy(cur, "cbdb");
-  cur += strlen("cbdb")+1;
-  //cbdb format version
-  *(uint16_t *)cur = htons(CBDB_FORMAT_VERSION);
-  cur += sizeof(uint16_t);
-  //revision
-  *(uint32_t *)cur = htonl(db->config.revision);
-  cur += sizeof(uint32_t);
-  //length of id and data
-  *(uint16_t *)cur = htons(db->config.id_len);
-  cur += sizeof(uint16_t);
-  *(uint16_t *)cur = htons(db->config.data_len);
-  cur += sizeof(uint16_t);
-  //index count
-  *(uint16_t *)cur = htons(db->config.index_count);
-  cur += sizeof(uint16_t);
+  FILE     *fp = db->data.fp;
+  int       rc, i;
+  int       total_written = 0;
+  cbdb_config_index_t *idxcf;
   
-  //indices
-  for(i=0; i<db->config.index_count; i++) {
-    icf = &db->index[i].config;
-    strcpy(cur, icf->name);
-    cur += strlen(cur)+1;
-    
-    *(uint16_t *)cur = htons((uint16_t )icf->type);
-    cur += sizeof(uint16_t);
-    *(uint16_t *)cur = htons((uint16_t )icf->start);
-    cur += sizeof(uint16_t);
-    *(uint16_t *)cur = htons((uint16_t )icf->len);
-    cur += sizeof(uint16_t);
+  if(fseek(fp, 0, SEEK_SET) == -1) {
+    cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Failed seeking to start of data file %s", db->data.path);
+    return 0;
   }
-  return cur - (char *)db->data.start;
+  
+  const char *fmt = 
+    "cbdb\n"
+    "format revision: %i\n"
+    "database revision: %"PRIu32"\n"
+    "id_len: %"PRIu16"\n"
+    "data_len: %"PRIu16"\n"
+    "index_count: %"PRIu16"\n"
+    "indices:\n";
+  rc = fprintf(fp, fmt, CBDB_FORMAT_VERSION, db->config.revision, db->config.id_len, db->config.data_len, db->config.index_count);
+  if(rc <= 0) {
+    cbdb_error(db, CBDB_ERROR_FILE_ACCESS, "Failed writing header to data file %s", db->data.path);
+    return 0;
+  }
+  total_written += rc;
+  
+  const char *index_fmt = 
+    "  - name: %s\n"
+    "    type: %s\n"
+    "    start: %"PRIu16"\n"
+    "    len: %"PRIu16"\n";
+    
+  for(i=0; i<db->config.index_count; i++) {
+    idxcf = &db->index[i].config;
+    rc = fprintf(fp, index_fmt, idxcf->name, cbdb_index_type_str(idxcf->type), idxcf->start, idxcf->len);
+    if(rc <= 0){
+      cbdb_error(db, CBDB_ERROR_FILE_ACCESS, "Failed writing header to data file %s", db->data.path);
+      return 0;
+    }
+    total_written += rc;
+  }
+  return total_written;
 }
 
 static int cbdb_index_type_valid(cbdb_index_type_t index_type) {
@@ -265,68 +328,112 @@ static int cbdb_index_type_valid(cbdb_index_type_t index_type) {
     case CBDB_INDEX_HASHTABLE:
     case CBDB_INDEX_BTREE:
       return 1;
+    case CBDB_INDEX_INVALID:
+      return 0;
   }
   return 0;
 }
+
 const char *cbdb_index_type_str(cbdb_index_type_t index_type) {
   switch(index_type) {
     case CBDB_INDEX_HASHTABLE:
       return "hashtable";
     case CBDB_INDEX_BTREE:
       return "B-tree";
+    case CBDB_INDEX_INVALID:
+      return "invalid";
   }
   return "???";
 }
 
-static off_t cbdb_data_header_read(cbdb_t *db, cbdb_config_t *cf, cbdb_config_index_t *index_cf) {
-  char     *cur = db->data.start;
-  uint16_t  cbdb_version;
-  int       i, n;
-  cbdb_config_index_t idx;
-  if(strcmp(cur, "cbdb") != 0) {
-    cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file is not a cbdb file or invalid");
+static cbdb_index_type_t cbdb_index_type(char *str) {
+  if(strcmp(str, "hashtable") == 0) {
+    return CBDB_INDEX_HASHTABLE;
+  }
+  else if(strcmp(str, "B-tree") == 0) {
+    return CBDB_INDEX_BTREE;
+  }
+  else {
+    return CBDB_INDEX_INVALID;
+  }
+}
+
+static int cbdb_read(cbdb_t *db, int fd, char *buf, size_t count, cbdb_error_code_t errcode) {
+  ssize_t bytes_read = read(fd, buf, count);
+  if(bytes_read == -1) {
+    cbdb_error(db, errcode, "Failed reading data from file");
     return 0;
   }
-  cur += strlen("cbdb")+1;
+  else if(bytes_read != count) {
+    cbdb_error(db, errcode, "Attempted to read past end of file");
+    return 0;
+  }
+  else {
+    return 1;
+  }
+}
+
+#define QUOTE(str) #str
+#define EXPAND_AND_QUOTE(str) QUOTE(str)
+#define CBDB_INDEX_NAME_MAX_LEN_STR EXPAND_AND_QUOTE(CBDB_INDEX_NAME_MAX_LEN)
+
+static off_t cbdb_data_header_read(cbdb_t *db, cbdb_config_t *cf, cbdb_config_index_t *index_cf, char *buf, off_t buflen) {
+  char     *cur = buf;
+  uint16_t  cbdb_version;
+  int       i, n;
+  FILE     *fp = db->data.fp;
+  char     *buf_end = &buf[buflen];
+  char      index_type_buf[32];
+  cbdb_config_index_t idx;
+  if(fseek(fp, 0, SEEK_SET) == -1) {
+    cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Failed seeking to start of data file");
+    return 0;
+  }
   
-  cbdb_version = ntohs(*(uint16_t *)cur);
-  cur += sizeof(uint16_t);
-  
-  cf->revision = ntohl(*(uint32_t *)cur);
-  cur += sizeof(uint32_t);
-  
-  cf->id_len = ntohs(*(uint16_t *)cur);
-  cur += sizeof(uint16_t);
-  
-  cf->data_len = ntohs(*(uint16_t *)cur);
-  cur += sizeof(uint16_t);
-  
-  cf->index_count = ntohs(*(uint16_t *)cur);
-  cur += sizeof(uint16_t);
+  const char *fmt = 
+    "cbdb\n"
+    "format revision: %hu\n"
+    "database revision: %u\n"
+    "id_len: %hu\n"
+    "data_len: %hu\n"
+    "index_count: %hu\n"
+    "indices:\n";
+  int rc = fscanf(fp, fmt, &cbdb_version, &cf->revision, &cf->id_len, &cf->data_len, &cf->index_count);
+  if(rc < 5){
+    cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file is not a cbdb file or is corrupted");
+    return 0;
+  }
+  if(cbdb_version != CBDB_FORMAT_VERSION) {
+    cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data format version mismatch, expected %i, loaded %"PRIu16, CBDB_FORMAT_VERSION, cbdb_version);
+    return 0;
+  }
   if(cf->index_count > CBDB_INDICES_MAX) {
     cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file invalid: too many indices defined");
     return 0;
   }
   
-  
+  const char *index_fmt = "  - name: %" CBDB_INDEX_NAME_MAX_LEN_STR "s\n"
+    "    type: %32s\n"
+    "    start: %hu\n"
+    "    len: %hu\n";
+    
   for(i=0, n=1; i<cf->index_count; i++) {
-    idx.name = cur;
-    cur += strlen(cur)+1;
-    
-    idx.type = ntohs(*(uint16_t *)cur);
-    cur += sizeof(uint16_t);
-    
-    idx.start = ntohs(*(uint16_t *)cur);
-    cur += sizeof(uint16_t);
-    
-    idx.len = ntohs(*(uint16_t *)cur);
-    cur += sizeof(uint16_t);
-    
-    if(!cbdb_index_type_valid(idx.type)) {
-      cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file invalid: index %s type is invalid", idx.name);
+    if(buf_end - cur < CBDB_INDEX_NAME_MAX_LEN) {
+      cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file invalid: not enough space to read index names");
       return 0;
     }
-    if(strcmp(cur, "primary") == 0) {
+    rc = fscanf(fp, index_fmt, cur, index_type_buf, &idx.start, &idx.len);
+    idx.name = cur;
+    cur += strlen(idx.name)+1;
+    if(rc < 4){
+      cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file invalid: index specification is invalid");
+      return 0;
+    }
+    if((idx.type = cbdb_index_type(index_type_buf)) == CBDB_INDEX_INVALID) {
+      cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file invalid: index \"%s\" type is invalid", idx.name);
+      return 0;
+    }
+    if(strcmp(idx.name, "primary") == 0) {
       index_cf[0] = idx;
     }
     else {
@@ -334,7 +441,51 @@ static off_t cbdb_data_header_read(cbdb_t *db, cbdb_config_t *cf, cbdb_config_in
       n++;
     }
   }
-  return cur - (char *)db->data.start;
+  return cur - db->data.start;
+}
+
+static int cbdb_config_match(cbdb_t *db, cbdb_config_t *loaded_cf, cbdb_config_index_t *loaded_index_cf) {
+  int i;
+  //see if the loaded config and the one passed in are the same
+  if(loaded_cf->revision != db->config.revision) {
+    cbdb_error(db, CBDB_ERROR_REVISION_MISMATCH, "Wrong revision number: expected %"PRIu32", loaded %"PRIu32, db->config.revision, loaded_cf->revision);
+    return 0;
+  }
+  if(loaded_cf->id_len != db->config.id_len) {
+    cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong id length: expected %"PRIu16", loaded %"PRIu16, db->config.id_len, loaded_cf->id_len);
+    return 0;
+  }
+  if(loaded_cf->data_len != db->config.data_len) {
+    cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong data length: expected %"PRIu16", loaded %"PRIu32, db->config.data_len, loaded_cf->data_len);
+    return 0;
+  }
+  if(loaded_cf->index_count != db->config.index_count) {
+    cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong index count: expected %"PRIu16", loaded %"PRIu16, db->config.index_count, loaded_cf->index_count);
+    return 0;
+  }
+      
+  //compare indices
+  cbdb_config_index_t *expected_index_cf;
+  for(i=0; i<loaded_cf->index_count; i++) {
+    expected_index_cf = &db->index[i].config;
+    if(strcmp(expected_index_cf->name, loaded_index_cf[i].name) != 0) {
+      cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong index %i name: expected %s, loaded %s", i, expected_index_cf->name, loaded_index_cf[i].name);
+      return 0;
+    }
+    if(expected_index_cf->type != loaded_index_cf[i].type) {
+      cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong index %i type: expected %s, loaded %s", i, cbdb_index_type_str(expected_index_cf->type), cbdb_index_type_str(loaded_index_cf[i].type));
+      return 0;
+    }
+    if(expected_index_cf->start != loaded_index_cf[i].start) {
+      cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong index %i start: expected %"PRIu16", loaded %"PRIu16, i, expected_index_cf->start, loaded_index_cf[i].start);
+      return 0;
+    }
+    if(expected_index_cf->len != loaded_index_cf[i].len) {
+      cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong index %i length: expected %"PRIu16", loaded %"PRIu16, i, expected_index_cf->len, loaded_index_cf[i].len);
+      return 0;
+    }
+  }
+  return 1;
 }
 
 static int cbdb_data_file_exists(cbdb_t *db) {
@@ -355,21 +506,52 @@ static cbdb_t *cbdb_open_abort(cbdb_t *db, cbdb_error_t *err) {
 }
 
 cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_config_index_t *index_cf, cbdb_error_t *err) {
-  cbdb_t       *db = cbdb_alloc_memset(path, name, cf, index_cf);
+  cbdb_t       *db;
   int           new_db = 0, i;
+  
+  if(index_cf && !cf) {
+    cbdb_set_error(err, CBDB_ERROR_BAD_CONFIG, "Cannot call cbdb_open with index_cf but without cf");
+    return NULL;
+  }
+  if(index_cf) {
+    for(i=0; i < cf->index_count; i++) {
+      if(strspn(index_cf[i].name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != strlen(index_cf[i].name)) {
+        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index name \"%s\" invalid: must consist of only ASCII alphanumeric characters and underscores", index_cf[i].name);
+        return NULL;
+      }
+      if(!cbdb_index_type_valid(index_cf[i].type)) {
+        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index \"%s\" type for is invalid", index_cf[i].name);
+        return NULL;
+      }
+      if(index_cf[i].start == CBDB_INDEX_ID && index_cf[i].len > cf->id_len) {
+        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index \"%s\" of id is too long: expected max %"PRIu16", got %"PRIu16, index_cf[i].name, cf->id_len, index_cf[i].len);
+        return NULL;
+      }
+      if(index_cf[i].start != CBDB_INDEX_ID && index_cf[i].start > cf->data_len) {
+        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index \"%s\" of data is out of bounds: data length is %"PRIu16", but index is set to start at %"PRIu16, index_cf[i].name, cf->data_len, index_cf[i].start);
+        return NULL;
+      }
+      if(index_cf[i].start + cf->data_len > cf->data_len) {
+        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index \"%s\" of data is out of bounds: data length is %"PRIu16", but index is set to end at %"PRIu16, index_cf[i].name, cf->data_len, index_cf[i].start + cf->data_len);
+        return NULL;
+      }
+    }
+  }
+  
+  db = cbdb_alloc_memset(path, name, cf, index_cf);
   
   if(db == NULL) {
     cbdb_set_error(err, CBDB_ERROR_NOMEMORY, "Failed to allocate memory for cbdb struct");
     return NULL;
   }
-
+  
   if(!cbdb_lock(db)) {
     return cbdb_open_abort(db, err);
   }
   
   new_db = !cbdb_data_file_exists(db);
   
-  if(!cbdb_mmap_file(db, "data", &db->data)) {
+  if(!cbdb_file_open(db, "data", &db->data)) {
     return cbdb_open_abort(db, err);
   }
   
@@ -377,7 +559,8 @@ cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_config_index_t
     cbdb_config_t         loaded_cf;
     cbdb_config_index_t   loaded_index_cf[CBDB_INDICES_MAX];
     off_t                 header_len;
-    if((header_len = cbdb_data_header_read(db, &loaded_cf, loaded_index_cf)) == 0) {
+    char                  buf[(CBDB_INDEX_NAME_MAX_LEN + 1) * CBDB_INDICES_MAX];
+    if((header_len = cbdb_data_header_read(db, &loaded_cf, loaded_index_cf, buf, (CBDB_INDEX_NAME_MAX_LEN + 1) * CBDB_INDICES_MAX)) == 0) {
       return cbdb_open_abort(db, err);
     }
     if(!cf) {
@@ -387,52 +570,15 @@ cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_config_index_t
       return loaded_db;
     }
     else {
-      //see if the loaded config and the one passed in are the same
-      if(loaded_cf.revision != db->config.revision) {
-        cbdb_error(db, CBDB_ERROR_REVISION_MISMATCH, "Wrong revision number: expected %"PRIu32", loaded %"PRIu32, db->config.revision, loaded_cf.revision);
+      //compare configs
+      if(cbdb_config_match(db, &loaded_cf, loaded_index_cf) == 0) {
         return cbdb_open_abort(db, err);
-      }
-      if(loaded_cf.id_len != db->config.id_len) {
-        cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong id length: expected %"PRIu16", loaded %"PRIu16, db->config.id_len, loaded_cf.id_len);
-        return cbdb_open_abort(db, err);
-      }
-      if(loaded_cf.data_len != db->config.data_len) {
-        cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong data length: expected %"PRIu16", loaded %"PRIu32, db->config.data_len, loaded_cf.data_len);
-        return cbdb_open_abort(db, err);
-      }
-      if(loaded_cf.index_count != db->config.index_count) {
-        cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong index count: expected %"PRIu16", loaded %"PRIu16, db->config.index_count, loaded_cf.index_count);
-        return cbdb_open_abort(db, err);
-      }
-      
-      //compare indices
-      cbdb_config_index_t *expected_index_cf;
-      for(i=0; i<loaded_cf.index_count; i++) {
-        expected_index_cf = &db->index[i].config;
-        if(strcmp(expected_index_cf->name, loaded_index_cf[i].name) != 0) {
-          cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong index %i name: expected %s, loaded %s", i, expected_index_cf->name, loaded_index_cf[i].name);
-          return cbdb_open_abort(db, err);
-        }
-        if(expected_index_cf->type != loaded_index_cf[i].type) {
-          cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong index %i type: expected %s, loaded %s", i, cbdb_index_type_str(expected_index_cf->type), cbdb_index_type_str(loaded_index_cf[i].type));
-          return cbdb_open_abort(db, err);
-        }
-        if(expected_index_cf->start != loaded_index_cf[i].start) {
-          cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong index %i start: expected %"PRIu16", loaded %"PRIu16, i, expected_index_cf->start, loaded_index_cf[i].start);
-          return cbdb_open_abort(db, err);
-        }
-        if(expected_index_cf->len != loaded_index_cf[i].len) {
-          cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong index %i start: expected %"PRIu16", loaded %"PRIu16, i, expected_index_cf->start, loaded_index_cf[i].start);
-          return cbdb_open_abort(db, err);
-        }
       }
       //ok, everything matches
     }
-    
   }
-  
   for(i=0; i<db->config.index_count; i++) {
-    if(!cbdb_mmap_index_file(db, i)) {
+    if(!cbdb_file_open_index(db, i)) {
       return cbdb_open_abort(db, err);
     }
   }
