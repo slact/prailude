@@ -5,8 +5,8 @@
 
 int main(void) {
   cbdb_config_t cf = {
+    .row_len = 50,
     .id_len = 10,
-    .data_len = 50,
     .index_count = 0
   };
   cbdb_error_t err;
@@ -17,7 +17,7 @@ int main(void) {
     return 1;
   }
   else {
-    printf("ERROR: %d: %s, errno %d %s\n", err.code, err.str, err.errno_val, strerror(err.errno_val));
+    cbdb_error_print(&err);
     return 0;
   }
 }

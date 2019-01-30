@@ -22,6 +22,24 @@
 
 #define CBDB_PAGESIZE (sysconf(_SC_PAGE_SIZE))
 
+static int is_little_endian(void) {
+  volatile union {
+    uint8_t  c[4];
+    uint32_t i;
+  } u;
+  u.i = 0x01020304;
+  return u.c[0] == 0x04;
+}
+
+void cbdb_error_print(cbdb_error_t *err) {
+  if(err->errno_val != 0) {
+    printf("ERROR [%d]: %s, errno [%d]: %s\n", err->code, err->str, err->errno_val, strerror(err->errno_val));
+  }
+  else {
+    printf("ERROR [%d]: %s\n", err->code, err->str);
+  }
+}
+
 static off_t cbdb_filename(cbdb_t *db, char *what, char *buf, off_t maxlen) {
   return snprintf(buf, maxlen, "%s%c%s.%s.cbdb", db->path, PATH_SLASH, db->name, what);
 }
@@ -29,17 +47,14 @@ static off_t cbdb_filename(cbdb_t *db, char *what, char *buf, off_t maxlen) {
 static cbdb_t *cbdb_alloc_memset(char *path, char *name, cbdb_config_t *cf, cbdb_config_index_t *index_cf) {
   cbdb_t    *db;
   size_t     sz;
-  int        i;
+  int        i, n=0;
   
   //initialize indices
   cbdb_config_index_t primary = {
-    .name = "primary", .type = CBDB_INDEX_HASHTABLE, .start = CBDB_INDEX_ID, .len = cf->id_len
+    .name = "primary", .type = CBDB_INDEX_HASHTABLE, .start = 0, .len = cf->id_len
   };
   
-  sz = sizeof(*db) + strlen(path) + 1 + strlen(name) + 1 + CBDB_ERROR_MAX_LEN + 1;
-  if(cf) {
-    sz += cf->id_len + cf->data_len;
-  }
+  sz = sizeof(*db) + strlen(path) + 1 + strlen(name) + 1;
   
   sz += sizeof(cbdb_index_t); // no need to allocate for primary index name -- see comments below.
   if(cf) {
@@ -55,40 +70,32 @@ static cbdb_t *cbdb_alloc_memset(char *path, char *name, cbdb_config_t *cf, cbdb
   memset(db, '\0', sz);
   
   db->index = (cbdb_index_t *)(&db[1]);
-  
   char *cur = (char *)(&db->index[1]);
-  
-  //primary index
-  db->index[0].config = primary;
-  //no need to copy name, it's a static string
-  // althought it might be worth it to keep the names adjacent in memory later
-  
   if(cf) {
     db->config = *cf;
     
-    //and now the rest of the indices
-    for(i=1; i<=cf->index_count; i++) {
-      db->index[i].config = index_cf[i-1];
-      db->index[i].config.name = cur;
-      strcpy(db->index[i].config.name, index_cf[i-1].name);
-      cur += strlen(index_cf[i-1].name) + 1;
+    //primary index, if there's a nonzero id
+    if(db->config.id_len > 0) {
+      db->index[n++].config = primary;
+      //no need to copy name, it's a static string
+      // althought it might be worth it to keep the names adjacent in memory later
+      db->config.index_count++; //just the primary index then
     }
     
-    db->config.index_count++; //add 1 for the primary index
     
-    db->buffer.id = cur;
-    cur += cf->id_len;
-    db->buffer.data = cur;
-    cur += cf->data_len;
-  }
-  else {
-    db->config.index_count = 1; //just the primary index then
+    //and now the rest of the indices
+    for(i=0; i<cf->index_count; i++) {
+      db->index[n].config = index_cf[i];
+      db->index[n].config.name = cur;
+      strcpy(db->index[n].config.name, index_cf[i].name);
+      cur += strlen(index_cf[i].name) + 1;
+      n++;
+    }
   }
   db->path = cur;
   cur += strlen(path)+1;
   db->name = cur;
   cur += strlen(name)+1;
-  db->buffer.error = cur;
   
   strcpy(db->path, path);
   strcpy(db->name, name);
@@ -108,18 +115,20 @@ static void cbdb_free(cbdb_t *db) {
 static void cbdb_set_error(cbdb_error_t *err, cbdb_error_code_t code, char *error_string) {
   if(err) {
     err->code = code;
-    err->str = error_string;
+    strncpy(err->str, error_string, CBDB_ERROR_MAX_LEN-1);
     err->errno_val = errno;
   }
 }
 
 static void cbdb_set_errorf(cbdb_error_t *err, cbdb_error_code_t code, char *err_fmt, ...) {
-  static char buf[CBDB_ERROR_MAX_LEN];
-  va_list ap;
-  va_start(ap, err_fmt);
-  vsnprintf(buf, CBDB_ERROR_MAX_LEN, err_fmt, ap);
-  cbdb_set_error(err, code, buf);
-  va_end(ap);
+  if(err) {
+    err->code = code;
+    va_list ap;
+    va_start(ap, err_fmt);
+    vsnprintf(err->str, CBDB_ERROR_MAX_LEN-1, err_fmt, ap);
+    err->errno_val = errno;
+    va_end(ap);
+  }
 }
 
 static void cbdb_error(cbdb_t *db, cbdb_error_code_t code, char *err_fmt, ...) {
@@ -140,8 +149,9 @@ static void cbdb_error(cbdb_t *db, cbdb_error_code_t code, char *err_fmt, ...) {
   }*/
   va_list ap;
   va_start(ap, err_fmt);
-  vsnprintf(db->buffer.error, CBDB_ERROR_MAX_LEN, err_fmt, ap);
-  cbdb_set_error(&db->error, code, db->buffer.error);
+  vsnprintf(db->error.str, CBDB_ERROR_MAX_LEN-1, err_fmt, ap);
+  db->error.code = code;
+  db->error.errno_val = errno;
   va_end(ap);
 }
 
@@ -321,11 +331,11 @@ static off_t cbdb_data_header_write(cbdb_t *db) {
     "cbdb\n"
     "format revision: %i\n"
     "database revision: %"PRIu32"\n"
+    "endianness: %s\n"
+    "row_len: %"PRIu16"\n"
     "id_len: %"PRIu16"\n"
-    "data_len: %"PRIu16"\n"
-    "index_count: %"PRIu16"\n"
-    "indices:\n";
-  rc = fprintf(fp, fmt, CBDB_FORMAT_VERSION, db->config.revision, db->config.id_len, db->config.data_len, db->config.index_count);
+    "indexes: %"PRIu16"\n";
+  rc = fprintf(fp, fmt, CBDB_FORMAT_VERSION, db->config.revision, is_little_endian() ? "little" : "big", db->config.row_len, db->config.id_len, db->config.index_count);
   if(rc <= 0) {
     cbdb_error(db, CBDB_ERROR_FILE_ACCESS, "Failed writing header to data file %s", db->data.path);
     return 0;
@@ -388,6 +398,8 @@ static off_t cbdb_data_header_read(cbdb_t *db, cbdb_config_t *cf, cbdb_config_in
   FILE     *fp = db->data.fp;
   char     *buf_end = &buf[buflen];
   char      index_type_buf[32];
+  char      endianness_buf[16];
+  int       little_endian;
   cbdb_config_index_t idx;
   if(fseek(fp, 0, SEEK_SET) == -1) {
     cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Failed seeking to start of data file");
@@ -398,21 +410,40 @@ static off_t cbdb_data_header_read(cbdb_t *db, cbdb_config_t *cf, cbdb_config_in
     "cbdb\n"
     "format revision: %hu\n"
     "database revision: %u\n"
+    "endianness: %15s\n"
+    "row_len: %hu\n"
     "id_len: %hu\n"
-    "data_len: %hu\n"
-    "index_count: %hu\n"
-    "indices:\n";
-  int rc = fscanf(fp, fmt, &cbdb_version, &cf->revision, &cf->id_len, &cf->data_len, &cf->index_count);
-  if(rc < 5){
+    "indexes: %hu\n";
+  int rc = fscanf(fp, fmt, &cbdb_version, &cf->revision, endianness_buf, &cf->row_len, &cf->id_len, &cf->index_count);
+  if(rc < 6){
     cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file is not a cbdb file or is corrupted");
     return 0;
   }
+  
   if(cbdb_version != CBDB_FORMAT_VERSION) {
     cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data format version mismatch, expected %i, loaded %"PRIu16, CBDB_FORMAT_VERSION, cbdb_version);
     return 0;
   }
+  
   if(cf->index_count > CBDB_INDICES_MAX) {
     cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file invalid: too many indices defined");
+    return 0;
+  }
+  
+  if(strcmp(endianness_buf, "big") == 0) {
+    little_endian = 0;
+  }
+  else if(strcmp(endianness_buf, "little") == 0) {
+    little_endian = 1;
+  }
+  else {
+    cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file invalid: unexpected endianness %s", endianness_buf);
+    return 0;
+  }
+  
+  if(is_little_endian() != little_endian) {
+    //TODO: convert data to host endianness
+    cbdb_error(db, CBDB_ERROR_WRONG_ENDIANNESS, "Data file has wrong endianness");
     return 0;
   }
   
@@ -461,12 +492,12 @@ static int cbdb_config_match(cbdb_t *db, cbdb_config_t *loaded_cf, cbdb_config_i
     cbdb_error(db, CBDB_ERROR_REVISION_MISMATCH, "Wrong revision number: expected %"PRIu32", loaded %"PRIu32, db->config.revision, loaded_cf->revision);
     return 0;
   }
-  if(loaded_cf->id_len != db->config.id_len) {
-    cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong id length: expected %"PRIu16", loaded %"PRIu16, db->config.id_len, loaded_cf->id_len);
+  if(loaded_cf->row_len != db->config.row_len) {
+    cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong row length: expected %"PRIu16", loaded %"PRIu32, db->config.row_len, loaded_cf->row_len);
     return 0;
   }
-  if(loaded_cf->data_len != db->config.data_len) {
-    cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong data length: expected %"PRIu16", loaded %"PRIu32, db->config.data_len, loaded_cf->data_len);
+  if(loaded_cf->id_len != db->config.id_len) {
+    cbdb_error(db, CBDB_ERROR_CONFIG_MISMATCH, "Wrong id length: expected %"PRIu16", loaded %"PRIu16, db->config.id_len, loaded_cf->id_len);
     return 0;
   }
   if(loaded_cf->index_count != db->config.index_count) {
@@ -505,11 +536,8 @@ static int cbdb_data_file_exists(cbdb_t *db) {
 }
 
 static cbdb_t *cbdb_open_abort(cbdb_t *db, cbdb_error_t *err) {
-  static char   errstr[CBDB_ERROR_MAX_LEN];
   if(err) {
     *err = db->error;
-    strncpy(errstr, err->str, CBDB_ERROR_MAX_LEN);
-    err->str = errstr;
   }
   cbdb_close(db);
   return NULL;
@@ -533,16 +561,12 @@ cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_config_index_t
         cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index \"%s\" type for is invalid", index_cf[i].name);
         return NULL;
       }
-      if(index_cf[i].start == CBDB_INDEX_ID && index_cf[i].len > cf->id_len) {
-        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index \"%s\" of id is too long: expected max %"PRIu16", got %"PRIu16, index_cf[i].name, cf->id_len, index_cf[i].len);
+      if(index_cf[i].start > cf->row_len) {
+        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index \"%s\" is out of bounds: row length is %"PRIu16", but index is set to start at %"PRIu16, index_cf[i].name, cf->row_len, index_cf[i].start);
         return NULL;
       }
-      if(index_cf[i].start != CBDB_INDEX_ID && index_cf[i].start > cf->data_len) {
-        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index \"%s\" of data is out of bounds: data length is %"PRIu16", but index is set to start at %"PRIu16, index_cf[i].name, cf->data_len, index_cf[i].start);
-        return NULL;
-      }
-      if(index_cf[i].start + cf->data_len > cf->data_len) {
-        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index \"%s\" of data is out of bounds: data length is %"PRIu16", but index is set to end at %"PRIu16, index_cf[i].name, cf->data_len, index_cf[i].start + cf->data_len);
+      if(index_cf[i].start + cf->row_len > cf->row_len) {
+        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index \"%s\" is out of bounds: row length is %"PRIu16", but index is set to end at %"PRIu16, index_cf[i].name, cf->row_len, index_cf[i].start + cf->row_len);
         return NULL;
       }
     }
@@ -601,9 +625,13 @@ cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_config_index_t
 }
 
 void cbdb_close(cbdb_t *db) {
+  int i;
+  
+  cbdb_file_close(db, &db->data);
+  cbdb_file_close(db, &db->meta);
+  for(i=0; i<db->config.index_count; i++) {
+    cbdb_file_close(db, &db->index[i].data);
+  }
   cbdb_unlock(db);
-  
-  //unmmap stuff maybe?...
-  
   cbdb_free(db);
 }

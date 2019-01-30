@@ -45,12 +45,11 @@ typedef enum {
   CBDB_INDEX_BTREE=2
 } cbdb_index_type_t;
 
-#define CBDB_INDEX_ID UINT16_MAX
 
 typedef struct {
   char              *name;
   cbdb_index_type_t  type;
-  uint16_t           start; // start of indexable value in data. set to CBDB_INDEX_ID to index from start of id
+  uint16_t           start; // start of indexable value in row
   uint16_t           len; //length of indexable data
 } cbdb_config_index_t;
 
@@ -74,18 +73,19 @@ typedef enum {
   CBDB_ERROR_VERSION_MISMATCH= 11,
   CBDB_ERROR_REVISION_MISMATCH= 12,
   CBDB_ERROR_BAD_CONFIG= 13,
+  CBDB_ERROR_WRONG_ENDIANNESS = 14
 } cbdb_error_code_t;
 
 typedef struct {
   cbdb_error_code_t    code;
-  char                *str;
   int                  errno_val;
+  char                 str[CBDB_ERROR_MAX_LEN];
 } cbdb_error_t;
 
 typedef struct {
   uint32_t revision;
-  uint16_t id_len;
-  uint16_t data_len;
+  uint16_t row_len;
+  uint16_t id_len; //id is part of the row, starting at row[0]
   uint16_t index_count;
 } cbdb_config_t;
 
@@ -96,11 +96,6 @@ typedef struct {
   cbdb_file_t     meta;
   cbdb_config_t   config;
   cbdb_index_t   *index;
-  struct {
-    char           *id;
-    char           *data;
-    char           *error;
-  }               buffer;
   cbdb_error_t    error;
 } cbdb_t;
 
@@ -110,6 +105,7 @@ cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_config_index_t
 void cbdb_close(cbdb_t *cbdb);
 
 int cbdb_insert(cbdb_t *cbdb, cbdb_str_t *id, cbdb_str_t *data);
-int cbdb_insert_row(cbdb_t *cbdb, cbdb_row_t *row); //id and data should be pre-filled
 int cbdb_find(cbdb_t *cbdb, cbdb_str_t *id); //return 1 if found, 0 if not found
 int cbdb_find_row(cbdb_t *cbdb, cbdb_row_t *row); //id should be pre-filled
+
+void cbdb_error_print(cbdb_error_t *err);
