@@ -26,12 +26,16 @@ typedef struct {
 } cbdb_row_t;
 
 typedef struct {
+  char *start;
+  char *end;
+} cbdb_char_range_t;
+
+typedef struct {
   int      fd;
   FILE    *fp;
-  char    *start; //first valid mmapped address, also the first byte of the file
-  char    *first; //first data byte (may not be first byte of file due to headers)
-  char    *last; //last byte in file
-  char    *end; //last valid mmapped address
+  cbdb_char_range_t mmap;
+  cbdb_char_range_t file;
+  cbdb_char_range_t data;
   char    *path;
 } cbdb_file_t;
 
@@ -104,7 +108,6 @@ typedef struct {
 
 cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_config_index_t *index, cbdb_error_t *err);
 void cbdb_close(cbdb_t *cbdb);
-const char *cbdb_index_type_str(cbdb_index_type_t);
 
 int cbdb_insert(cbdb_t *cbdb, cbdb_str_t *id, cbdb_str_t *data);
 int cbdb_insert_row(cbdb_t *cbdb, cbdb_row_t *row); //id and data should be pre-filled

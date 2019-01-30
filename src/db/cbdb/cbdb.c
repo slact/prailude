@@ -181,7 +181,7 @@ static int cbdb_unlock(cbdb_t *db) {
 }
 
 static int cbdb_file_ensure_size(cbdb_t *db, cbdb_file_t *f, size_t desired_min_sz) {
-  size_t current_sz = f->last - f->start;
+  size_t current_sz = f->file.end - f->file.start;
   if(current_sz < desired_min_sz) {
     if(lseek(f->fd, desired_min_sz - current_sz, SEEK_END) == -1) {
       cbdb_error(db, CBDB_ERROR_FILE_SIZE, "Failed to seek to end of file");
@@ -206,8 +206,8 @@ static int cbdb_file_getsize(cbdb_t *db, int fd, off_t *sz) {
 }
 
 static int cbdb_file_close(cbdb_t *db, cbdb_file_t *f) {
-  if(f->start && f->start != MAP_FAILED) {
-    munmap(f->start, f->end - f->start);
+  if(f->mmap.start && f->mmap.start != MAP_FAILED) {
+    munmap(f->mmap.start, f->mmap.end - f->mmap.start);
   }
   if(f->fp) {
     fclose(f->fp);
@@ -219,10 +219,12 @@ static int cbdb_file_close(cbdb_t *db, cbdb_file_t *f) {
     close(f->fd);
     f->fd = -1;
   }
-  f->start = NULL;
-  f->first = NULL;
-  f->last = NULL;
-  f->end = NULL;
+  f->mmap.start = NULL;
+  f->mmap.end = NULL;
+  f->file.start = NULL;
+  f->file.end = NULL;
+  f->data.start = NULL;
+  f->data.end = NULL;
   
   if(f->path) {
     free(f->path);
@@ -255,20 +257,22 @@ static int cbdb_file_open(cbdb_t *db, char *what, cbdb_file_t *f) {
   }
   
   sz = CBDB_PAGESIZE*10;
-  f->start = mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_SHARED, f->fd, 0);
-  if(f->start == MAP_FAILED) {
+  f->mmap.start = mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_SHARED, f->fd, 0);
+  if(f->mmap.start == MAP_FAILED) {
     cbdb_error(db, CBDB_ERROR_FILE_ACCESS, "Failed to mmap file %s", path);
     cbdb_file_close(db, f);
     return 0;
   }
-  f->end = &f->start[sz]; //last mmapped address
+  f->mmap.end = &f->mmap.start[sz]; //last mmapped address
   
+  f->file.start = f->mmap.start;
   if(!cbdb_file_getsize(db, f->fd, &sz)) {
     cbdb_file_close(db, f);
     return 0;
   }
-  f->last = &f->start[sz];//last actual byte in file
+  f->file.end = &f->file.start[sz];
   
+  f->data = f->file;
   
   return 1;
 }
@@ -277,6 +281,29 @@ static int cbdb_file_open_index(cbdb_t *db, int index_n) {
   char index_name[128];
   snprintf(index_name, 128, "index.%s", db->index[index_n].config.name);
   return cbdb_file_open(db, index_name, &db->index[index_n].data);
+}
+
+static int cbdb_index_type_valid(cbdb_index_type_t index_type) {
+  switch(index_type) {
+    case CBDB_INDEX_HASHTABLE:
+    case CBDB_INDEX_BTREE:
+      return 1;
+    case CBDB_INDEX_INVALID:
+      return 0;
+  }
+  return 0;
+}
+
+static const char *cbdb_index_type_str(cbdb_index_type_t index_type) {
+  switch(index_type) {
+    case CBDB_INDEX_HASHTABLE:
+      return "hashtable";
+    case CBDB_INDEX_BTREE:
+      return "B-tree";
+    case CBDB_INDEX_INVALID:
+      return "invalid";
+  }
+  return "???";
 }
 
 static off_t cbdb_data_header_write(cbdb_t *db) {
@@ -321,29 +348,6 @@ static off_t cbdb_data_header_write(cbdb_t *db) {
     total_written += rc;
   }
   return total_written;
-}
-
-static int cbdb_index_type_valid(cbdb_index_type_t index_type) {
-  switch(index_type) {
-    case CBDB_INDEX_HASHTABLE:
-    case CBDB_INDEX_BTREE:
-      return 1;
-    case CBDB_INDEX_INVALID:
-      return 0;
-  }
-  return 0;
-}
-
-const char *cbdb_index_type_str(cbdb_index_type_t index_type) {
-  switch(index_type) {
-    case CBDB_INDEX_HASHTABLE:
-      return "hashtable";
-    case CBDB_INDEX_BTREE:
-      return "B-tree";
-    case CBDB_INDEX_INVALID:
-      return "invalid";
-  }
-  return "???";
 }
 
 static cbdb_index_type_t cbdb_index_type(char *str) {
@@ -441,7 +445,13 @@ static off_t cbdb_data_header_read(cbdb_t *db, cbdb_config_t *cf, cbdb_config_in
       n++;
     }
   }
-  return cur - db->data.start;
+  
+  off_t pos = ftell(fp);
+  if(pos == -1) {
+    cbdb_error(db, CBDB_ERROR_FILE_INVALID, "Data file invalid: unable to ftell() header size");
+    return 0;
+  }
+  return pos;
 }
 
 static int cbdb_config_match(cbdb_t *db, cbdb_config_t *loaded_cf, cbdb_config_index_t *loaded_index_cf) {
