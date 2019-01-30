@@ -1,3 +1,5 @@
+#ifndef _CBDB_H
+#define _CBDB_H
 #include <inttypes.h>
 #include <limits.h>
 #include <stddef.h>
@@ -109,3 +111,7 @@ int cbdb_find(cbdb_t *cbdb, cbdb_str_t *id); //return 1 if found, 0 if not found
 int cbdb_find_row(cbdb_t *cbdb, cbdb_row_t *row); //id should be pre-filled
 
 void cbdb_error_print(cbdb_error_t *err);
+
+
+
+#endif //_CBDB_H

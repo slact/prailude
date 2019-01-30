@@ -372,21 +372,6 @@ static cbdb_index_type_t cbdb_index_type(char *str) {
   }
 }
 
-static int cbdb_read(cbdb_t *db, int fd, char *buf, size_t count, cbdb_error_code_t errcode) {
-  ssize_t bytes_read = read(fd, buf, count);
-  if(bytes_read == -1) {
-    cbdb_error(db, errcode, "Failed reading data from file");
-    return 0;
-  }
-  else if(bytes_read != count) {
-    cbdb_error(db, errcode, "Attempted to read past end of file");
-    return 0;
-  }
-  else {
-    return 1;
-  }
-}
-
 #define QUOTE(str) #str
 #define EXPAND_AND_QUOTE(str) QUOTE(str)
 #define CBDB_INDEX_NAME_MAX_LEN_STR EXPAND_AND_QUOTE(CBDB_INDEX_NAME_MAX_LEN)
@@ -553,6 +538,9 @@ cbdb_t *cbdb_open(char *path, char *name, cbdb_config_t *cf, cbdb_config_index_t
   }
   if(index_cf) {
     for(i=0; i < cf->index_count; i++) {
+      if(strlen(index_cf[i].name) > CBDB_INDEX_NAME_MAX_LEN) {
+        cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index name \"%s\" too long, must be at most %i characters", index_cf[i].name, CBDB_INDEX_NAME_MAX_LEN);
+      }
       if(strspn(index_cf[i].name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != strlen(index_cf[i].name)) {
         cbdb_set_errorf(err, CBDB_ERROR_BAD_CONFIG, "Index name \"%s\" invalid: must consist of only ASCII alphanumeric characters and underscores", index_cf[i].name);
         return NULL;
